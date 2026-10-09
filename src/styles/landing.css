@@ -98,31 +98,26 @@ h1, h2, h3, p { margin: 0; }
    resolve against its parent), so the bezel is always 2.9% of the phone. */
 .phone img { width: 94.2%; margin: 2.9%; border-radius: 13.6% / 6.3%; }
 
-/* ---------- Pill tabs ---------- */
+/* ---------- Pill tabs (separate chips, active one filled dark) ---------- */
 .tabs {
-  display: inline-flex;
+  display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  padding: 4px;
+  gap: 8px;
   margin-top: 28px;
-  border-radius: 999px;
-  background: var(--pill-bg);
 }
 .tabs button {
   border: 0;
   cursor: pointer;
   font: 600 15px var(--font);
+  white-space: nowrap;
   padding: 10px 20px;
   border-radius: 999px;
-  background: transparent;
+  background: var(--pill-bg);
   color: var(--fg-2);
-  transition: background .2s, color .2s, box-shadow .2s;
+  transition: background .2s, color .2s;
 }
-.tabs button[aria-selected="true"] {
-  background: #fff;
-  color: var(--fg);
-  box-shadow: 0 1px 3px rgba(47, 47, 47, .12);
-}
+.tabs button:hover { color: var(--fg); }
+.tabs button[aria-selected="true"] { background: var(--fg); color: #fff; }
 
 /* ---------- Buttons ---------- */
 .btn-coral {
@@ -467,16 +462,7 @@ h1, h2, h3, p { margin: 0; }
 }
 
 @media (max-width: 640px) {
-  /* Tabs become separate pills that wrap cleanly instead of one segmented
-     control whose labels break onto two lines. */
-  .tabs { background: transparent; padding: 0; gap: 8px; }
-  .tabs button {
-    white-space: nowrap;
-    font-size: 14px;
-    padding: 9px 16px;
-    background: var(--pill-bg);
-  }
-  .tabs button[aria-selected="true"] { background: var(--fg); color: #fff; box-shadow: none; }
+  .tabs button { font-size: 14px; padding: 9px 16px; }
 }
 
 @media (max-width: 520px) {
