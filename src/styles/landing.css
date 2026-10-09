@@ -458,6 +458,19 @@ h1, h2, h3, p { margin: 0; }
   .hero-phones .phone.center { flex-basis: 48vw; margin-top: 0; }
 }
 
+@media (max-width: 640px) {
+  /* Tabs become separate pills that wrap cleanly instead of one segmented
+     control whose labels break onto two lines. */
+  .tabs { background: transparent; padding: 0; gap: 8px; }
+  .tabs button {
+    white-space: nowrap;
+    font-size: 14px;
+    padding: 9px 16px;
+    background: var(--pill-bg);
+  }
+  .tabs button[aria-selected="true"] { background: var(--fg); color: #fff; box-shadow: none; }
+}
+
 @media (max-width: 520px) {
   /* Stack email + button instead of a wrapped pill. */
   .waitlist-form { flex-direction: column; border-radius: 26px; gap: 4px; }
