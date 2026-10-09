@@ -1,70 +1,102 @@
 ---
 import Base from '../layouts/Base.astro';
 import Canopy from '../components/Canopy.astro';
+import Phone from '../components/Phone.astro';
 import { SITE } from '../data/site';
 
 // Same feature set as the App Store description (ARC/docs/app-store-listing.md)
-// — only what the app does today.
+// — only what the app does today. Screenshots are real build captures.
 const features = [
   {
-    title: 'Your logbook',
+    kicker: 'Logbook',
+    title: 'Every jump, in seconds',
+    text: 'Log skydives and tunnel sessions with the details that matter — and get them signed by the people who were there.',
     points: [
-      'Log skydives and tunnel sessions in seconds — DZ, discipline, altitudes, freefall, aircraft, canopy, who you jumped with.',
-      'Get jumps signed: ask a friend, they sign in the app with name, role and licence number.',
+      'DZ, discipline, altitudes, freefall, aircraft, canopy and who you jumped with.',
+      'Ask a friend to sign: name, role and licence number, right in the app.',
       'Scan your paper logbook in, or import an Excel or CSV file.',
       'Export everything as an Excel file anytime. Your data stays yours.',
     ],
-  },
-  {
-    title: 'Licence, gear & documents',
-    points: [
-      'Licence, ratings, AAD, reserve repacks and insurance — scanned straight from paper or PDF.',
-      'See at a glance when your repack, AAD service or insurance is due.',
-      'Your rigs with exit weight and wingload.',
-      'A one-page skydiver profile PDF for manifest and organisers.',
+    screens: [
+      { src: '/img/screens/logbook.jpg', alt: 'Skydive log with jumps grouped by month' },
+      { src: '/img/screens/log-jump.jpg', alt: 'Log a jump: date, dropzone, gear, discipline and exit altitude' },
     ],
   },
   {
-    title: 'Dropzones & tunnels',
+    kicker: 'Dropzones & tunnels',
+    title: 'Know before you drive out',
+    text: 'Every dropzone and wind tunnel on one map — with the weather that matters for jumping.',
     points: [
-      'Map of dropzones and wind tunnels with altitude, aircraft, hours, prices, photos and reviews.',
-      'Jump-day weather: hourly forecast, winds aloft, clouds by altitude and Föhn warnings for the Alps.',
+      'Altitude, aircraft, opening hours, prices, photos and reviews.',
+      'Hourly forecast, winds aloft, clouds by altitude and Föhn warnings for the Alps.',
       'Webcams, contact and directions right on the DZ page.',
       'The community keeps it current — suggest changes or add a new DZ.',
     ],
+    screens: [{ src: '/img/screens/map.jpg', alt: 'Map of dropzones and wind tunnels around Zurich' }],
   },
   {
-    title: 'Your crew',
+    kicker: 'Skill profile',
+    title: 'Show what you fly',
+    text: 'Belly, freefly, angle, wingsuit, tunnel, canopy — your skills at a glance, on your profile.',
     points: [
-      'Add the people you jump with and follow their jumps and milestones.',
-      'Chat, share posts and plan jump days and boogies with events.',
-      'Show what you fly — belly, freefly, angle, wingsuit, tunnel.',
-      'Emergency contact (and, if you choose, medical info) your friends can see when it matters.',
+      'Freefall and tunnel air time, always up to date.',
+      'Licence, ratings, AAD, repacks and insurance — and when they\'re due.',
+      'Your rigs with exit weight and wingload.',
+      'A one-page skydiver profile PDF for manifest and organisers.',
     ],
+    screens: [
+      { src: '/img/screens/skill-bodyfly-sky.jpg', alt: 'Skill profile chart for bodyflying in the sky' },
+      { src: '/img/screens/skill-canopy.jpg', alt: 'Skill profile chart for canopy flying' },
+    ],
+  },
+  {
+    kicker: 'Your crew',
+    title: 'Jump with your people',
+    text: 'Add the people you jump with, follow their jumps and plan the next load together.',
+    points: [
+      'Feed with your friends\' jumps, milestones and posts.',
+      'Chat, share posts and plan jump days and boogies with events.',
+      'Emergency contact — and, if you choose, medical info — your friends can see when it matters.',
+    ],
+    screens: [{ src: '/img/screens/home.jpg', alt: 'Home with upcoming events and friend suggestions' }],
   },
 ];
 ---
 <Base>
   <section class="hero">
     <div class="wrap hero-inner">
-      <Canopy size={120} label="Arc" />
-      <h1>Every jump.<br />Signed by your crew.</h1>
-      <p class="lead">{SITE.description}</p>
-      {SITE.appStoreUrl
-        ? <a class="cta" href={SITE.appStoreUrl}>Download on the App Store</a>
-        : <p class="soon">Coming soon to iPhone · free for jumpers</p>}
+      <div class="hero-text">
+        <Canopy size={84} label="Arc" />
+        <h1>Every jump.<br />Signed by your crew.</h1>
+        <p class="lead">{SITE.description}</p>
+        {SITE.appStoreUrl
+          ? <a class="cta" href={SITE.appStoreUrl}>Download on the App Store</a>
+          : <p class="soon">Coming soon to iPhone · free for jumpers</p>}
+      </div>
+      <div class="hero-phone">
+        <Phone src="/img/screens/logbook.jpg" alt="Arc skydive logbook" eager tilt="right" />
+      </div>
     </div>
   </section>
 
-  <section id="features" class="wrap features" aria-labelledby="features-title">
-    <h2 id="features-title" class="sr-only">Features</h2>
-    {features.map(f => (
-      <article class="card">
-        <h3>{f.title}</h3>
-        <ul>{f.points.map(p => <li>{p}</li>)}</ul>
-      </article>
+  <div id="features" class="wrap">
+    <h2 class="sr-only">Features</h2>
+    {features.map((f, i) => (
+      <section class:list={['feature', i % 2 === 1 && 'flip']}>
+        <div class="feature-text">
+          <p class="kicker">{f.kicker}</p>
+          <h3>{f.title}</h3>
+          <p class="feature-lead">{f.text}</p>
+          <ul>{f.points.map(p => <li>{p}</li>)}</ul>
+        </div>
+        <div class:list={['feature-phones', f.screens.length > 1 && 'pair']}>
+          {f.screens.map((s, j) => (
+            <Phone src={s.src} alt={s.alt} tilt={f.screens.length > 1 ? (j === 0 ? 'left' : 'right') : undefined} />
+          ))}
+        </div>
+      </section>
     ))}
-  </section>
+  </div>
 
   <section class="wrap narrow note">
     <h2>Free for jumpers</h2>
@@ -81,32 +113,45 @@ const features = [
   .hero {
     background: linear-gradient(180deg, var(--brand-top), var(--brand-bottom));
     color: var(--cream);
-    padding-block: clamp(56px, 10vw, 112px);
-    text-align: center;
+    padding-block: clamp(48px, 8vw, 96px);
+    overflow: hidden;
   }
-  .hero-inner { display: flex; flex-direction: column; align-items: center; gap: 20px; }
-  .hero h1 { font-size: clamp(2.2rem, 6vw, 3.6rem); font-weight: 800; margin: 8px 0 0; }
-  .lead { max-width: 560px; font-size: 1.1rem; margin: 0; color: #fff; opacity: 0.95; }
+  .hero-inner { display: grid; gap: 48px; align-items: center; }
+  .hero-text { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 18px; }
+  .hero h1 { font-size: clamp(2.2rem, 5.5vw, 3.6rem); font-weight: 800; margin: 0; }
+  .lead { max-width: 520px; font-size: 1.1rem; margin: 0; color: #fff; }
   .soon {
-    margin: 8px 0 0; padding: 10px 18px; border-radius: 999px;
+    margin: 4px 0 0; padding: 10px 18px; border-radius: 999px;
     background: rgba(253, 245, 230, 0.16); border: 1px solid rgba(253, 245, 230, 0.4);
     font-weight: 700; font-size: 0.95rem; color: #fff;
   }
-  .cta {
-    margin-top: 8px; padding: 14px 24px; border-radius: 14px; background: var(--cream);
-    color: var(--brand-bottom); font-weight: 800; text-decoration: none;
+  .cta { margin-top: 4px; padding: 14px 24px; border-radius: 14px; background: var(--cream); color: var(--brand-bottom); font-weight: 800; text-decoration: none; }
+  .hero-phone { display: flex; justify-content: center; }
+  @media (min-width: 880px) {
+    .hero-inner { grid-template-columns: 1.2fr 1fr; }
+    .hero-text { align-items: flex-start; text-align: left; }
   }
-  .features {
-    display: grid; gap: 20px; grid-template-columns: 1fr;
-    margin-top: -40px; position: relative;
+
+  .feature {
+    display: grid; gap: 40px; align-items: center;
+    padding-block: clamp(48px, 7vw, 88px);
+    border-bottom: 1px solid var(--border);
   }
-  @media (min-width: 760px) { .features { grid-template-columns: 1fr 1fr; } }
-  .card { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 24px; }
-  .card h3 { font-size: 1.2rem; color: var(--fg); }
-  .card ul { margin: 0; padding-left: 1.1em; color: var(--fg-2); }
-  .card li { margin-bottom: 8px; }
-  .card li::marker { color: var(--action); }
-  .note { margin-top: 64px; text-align: center; }
+  .feature:last-child { border-bottom: 0; }
+  .kicker { margin: 0 0 6px; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-text); }
+  .feature h3 { font-size: clamp(1.7rem, 3.6vw, 2.4rem); font-weight: 800; }
+  .feature-lead { color: var(--fg-2); font-size: 1.1rem; margin: 0 0 16px; }
+  .feature ul { margin: 0; padding-left: 1.1em; color: var(--fg-2); }
+  .feature li { margin-bottom: 8px; }
+  .feature li::marker { color: var(--action); }
+  .feature-phones { display: flex; justify-content: center; gap: 20px; }
+  .feature-phones.pair :global(.phone) { width: min(46%, 250px); }
+  @media (min-width: 880px) {
+    .feature { grid-template-columns: 1fr 1fr; gap: 64px; }
+    .feature.flip .feature-text { order: 2; }
+  }
+
+  .note { margin-top: 32px; text-align: center; }
   .note h2 { font-size: 1.8rem; }
   .note p { color: var(--fg-2); }
   .small { font-size: 0.9rem; color: var(--fg-3) !important; }
