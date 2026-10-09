@@ -1,0 +1,40 @@
+---
+import Base from '../layouts/Base.astro';
+import { SITE } from '../data/site';
+
+// Paths match the app's menus (ARC, 2026-10-09).
+const faq = [
+  { q: 'How do I get a jump signed?', a: 'Open the jump in your logbook, tap Sign and send the request to a friend. They sign in the app with their name, role and licence number.' },
+  { q: 'Can I bring my old paper logbook?', a: 'Yes. In the logbook, tap ⋯ → Scan logbook pages, or import an Excel or CSV file. You check every row before anything is saved.' },
+  { q: 'How do I export my logbook?', a: 'Settings → Data → Export logbook. You get an Excel file with every jump, including signatures.' },
+  { q: 'Who can see my medical info?', a: 'Only you — unless you chose to show it to your friends. You can change this or withdraw your consent anytime in Emergency & medical.' },
+  { q: 'Some dropzone info is wrong.', a: 'Open the dropzone and tap Suggest changes. We review suggestions before they go live.' },
+  { q: 'How do I report or block someone?', a: 'Tap ⋯ on their profile, post or comment and choose Report, or Block on their profile. We review reports within 24 hours.' },
+  { q: 'How do I delete my account?', a: 'Settings → Delete account. Everything is deleted right away — export your logbook first if you want to keep a copy.' },
+  { q: 'Found a bug or have an idea?', a: 'Settings → Report a bug or Share your feedback — or write to us.' },
+];
+---
+<Base title="Support" description="Help with Arc, the skydiving logbook app.">
+  <div class="wrap narrow support">
+    <h1>Support</h1>
+    <p class="lead">Questions about Arc? Write to <a href={`mailto:${SITE.supportEmail}`}>{SITE.supportEmail}</a> — we usually answer within a day or two.</p>
+
+    <h2>Frequently asked</h2>
+    {faq.map(item => (
+      <details>
+        <summary>{item.q}</summary>
+        <p>{item.a}</p>
+      </details>
+    ))}
+  </div>
+</Base>
+
+<style>
+  .support { padding-top: 48px; }
+  .support h1 { font-size: clamp(2rem, 5vw, 2.6rem); font-weight: 800; }
+  .support h2 { font-size: 1.25rem; margin-top: 40px; }
+  .lead { color: var(--fg-2); font-size: 1.05rem; }
+  details { background: var(--surface); border-radius: 14px; box-shadow: var(--shadow); padding: 0 18px; margin-bottom: 12px; }
+  summary { cursor: pointer; font-weight: 700; padding: 16px 0; min-height: 44px; }
+  details p { margin: 0 0 16px; color: var(--fg-2); }
+</style>

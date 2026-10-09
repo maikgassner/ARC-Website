@@ -1,0 +1,35 @@
+---
+import Base from './Base.astro';
+import { UPDATED, type LegalSection } from '../data/legal';
+
+interface Props { title: string; sections: LegalSection[] }
+const { title, sections } = Astro.props;
+---
+<Base title={title}>
+  <article class="wrap narrow legal">
+    <h1>{title}</h1>
+    <p class="draft" role="note">Draft — not yet reviewed by a lawyer. Content may change.</p>
+    <p class="updated">{UPDATED}</p>
+    {sections.map(sec => (
+      <section>
+        <h2>{sec.heading}</h2>
+        {sec.paragraphs?.map(p => <p>{p}</p>)}
+        {sec.bullets && <ul>{sec.bullets.map(b => <li>{b}</li>)}</ul>}
+        {sec.after?.map(p => <p>{p}</p>)}
+      </section>
+    ))}
+  </article>
+</Base>
+
+<style>
+  .legal { padding-top: 48px; }
+  .legal h1 { font-size: clamp(2rem, 5vw, 2.6rem); font-weight: 800; }
+  .legal h2 { font-size: 1.25rem; margin-top: 36px; }
+  .legal p, .legal li { color: var(--fg-2); }
+  .legal li { margin-bottom: 8px; }
+  .draft {
+    background: #faf0de; border: 1px solid #e3a23e; border-radius: 12px;
+    padding: 12px 16px; color: var(--fg) !important; font-weight: 600; font-size: 0.95rem;
+  }
+  .updated { font-size: 0.9rem; color: var(--fg-3) !important; }
+</style>

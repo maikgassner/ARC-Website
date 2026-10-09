@@ -1,0 +1,49 @@
+@import '@fontsource-variable/plus-jakarta-sans';
+
+/* Arc tokens — mirror ARC/constants/tokens.ts so web and app look alike. */
+:root {
+  --ink-900: #292b2c;
+  --ink-700: #4c5256;
+  --ink-200: #dddfdd;
+  --ink-100: #eceeed;
+  --bg: #fbfbfb;
+  --surface: #ffffff;
+  --fg: #292b2c;
+  --fg-2: #4c5256;
+  --fg-3: #6f767b;
+  --border: #dddfdd;
+  --coral-50: #fdeee8;
+  --coral-500: #f69175;
+  --action: #c64e2c;     /* white text on it: 4.6:1 (AA) */
+  --accent-text: #b04524; /* coral text on white / coral-50: AA */
+  --cream: #fdf5e6;
+  --brand-top: #e07a3e;
+  --brand-bottom: #960b05;
+  --radius: 16px;
+  --shadow: 0 1px 2px rgba(41, 43, 44, 0.04), 0 8px 24px rgba(41, 43, 44, 0.06);
+  --font: 'Plus Jakarta Sans Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color-scheme: light;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--fg);
+  background: var(--bg);
+}
+img, svg { max-width: 100%; display: block; }
+a { color: var(--accent-text); text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible { outline: 3px solid var(--action); outline-offset: 3px; border-radius: 6px; }
+h1, h2, h3 { line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 0.5em; }
+
+.wrap { width: 100%; max-width: 1080px; margin-inline: auto; padding-inline: 20px; }
+.narrow { max-width: 720px; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
