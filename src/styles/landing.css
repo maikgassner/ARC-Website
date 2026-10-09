@@ -90,8 +90,13 @@ h1, h2, h3, p { margin: 0; }
 .glow { position: absolute; inset: 0; pointer-events: none; }
 
 /* ---------- Phone frame ---------- */
-.phone { padding: 8px; border-radius: 44px; background: var(--phone); }
-.phone img { width: 100%; border-radius: 36px; }
+/* Bezel + corners are proportional to the phone's width (horizontal % /
+   vertical %), so the frame looks the same at 100px or 300px wide —
+   like a fixed image, without shipping framed PNGs. */
+.phone { border-radius: 15.7% / 7.5%; background: var(--phone); }
+/* % margins resolve against the phone's width (% padding on .phone would
+   resolve against its parent), so the bezel is always 2.9% of the phone. */
+.phone img { width: 94.2%; margin: 2.9%; border-radius: 13.6% / 6.3%; }
 
 /* ---------- Pill tabs ---------- */
 .tabs {
@@ -262,11 +267,12 @@ h1, h2, h3, p { margin: 0; }
   gap: clamp(12px, 2.4vw, 32px);
   margin-top: clamp(56px, 7vw, 88px);
   height: clamp(300px, 36vw, 460px);
-  overflow: hidden;
+  /* Crop only the bottom edge — overflow:hidden also cut the shadows at the
+     sides, which showed up as a lighter box on mobile. */
+  clip-path: inset(-200px -100vw 0 -100vw);
 }
 .hero-phones .phone { flex: 0 1 270px; min-width: 0; margin-top: 70px; box-shadow: 0 30px 80px rgba(60, 10, 0, .35); }
-.hero-phones .phone.center { flex-basis: 300px; margin-top: 0; border-radius: 46px; box-shadow: 0 40px 100px rgba(60, 10, 0, .4); }
-.hero-phones .phone.center img { border-radius: 38px; }
+.hero-phones .phone.center { flex-basis: 300px; margin-top: 0; box-shadow: 0 40px 100px rgba(60, 10, 0, .4); }
 
 /* ============================================================
    SECTIONS
@@ -437,3 +443,24 @@ h1, h2, h3, p { margin: 0; }
 .contact-error { font-size: 14px; font-weight: 600; color: var(--coral-ink); margin: 2px 0 0; }
 .contact-form button:disabled { opacity: .6; cursor: default; }
 .hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+
+/* ============================================================
+   MOBILE
+   ============================================================ */
+@media (max-width: 640px) {
+  /* Logo + CTA on one row; the section links are anchors further down. */
+  .nav { flex-wrap: nowrap; }
+  .nav-links { display: none; }
+
+  /* Bigger phones; the side ones run off the screen edges. */
+  .hero-phones { gap: 3vw; height: 88vw; }
+  .hero-phones .phone { flex: 0 0 40vw; margin-top: 12vw; }
+  .hero-phones .phone.center { flex-basis: 48vw; margin-top: 0; }
+}
+
+@media (max-width: 520px) {
+  /* Stack email + button instead of a wrapped pill. */
+  .waitlist-form { flex-direction: column; border-radius: 26px; gap: 4px; }
+  .waitlist-form input { flex: none; width: 100%; text-align: center; }
+  .waitlist-form button { width: 100%; }
+}
