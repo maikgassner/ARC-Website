@@ -200,16 +200,18 @@ const year = new Date().getFullYear();
         <div class="overline">Contact</div>
         <h2>Say hello.</h2>
         <p class="contact-lede">Questions or feedback? Write to us.</p>
-        <a href={`mailto:${SITE.supportEmail}`} class="link-underline">{SITE.supportEmail}</a>
       </div>
 
-      <form class="contact-form" data-form="contact">
+      <form class="contact-form" data-form="contact" data-key={SITE.web3formsKey}>
         <div class="row">
-          <input required name="name" placeholder="Name" aria-label="Name">
-          <input required type="email" name="email" placeholder="Email" aria-label="Email">
+          <input required name="name" placeholder="Name" aria-label="Name" maxlength="120">
+          <input required type="email" name="email" placeholder="Email" aria-label="Email" maxlength="254">
         </div>
-        <textarea name="message" placeholder="Your message" rows="5" aria-label="Your message"></textarea>
+        <textarea required name="message" placeholder="Your message" rows="5" aria-label="Your message" maxlength="5000"></textarea>
+        <!-- Honeypot: hidden from people, bots tick it and get dropped by Web3Forms -->
+        <input type="checkbox" name="botcheck" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
         <button type="submit" class="btn-coral">Send message</button>
+        <p class="contact-error" data-contact-error hidden>Couldn't send your message. Please try again in a moment.</p>
       </form>
 
       <div class="contact-done" data-contact-done hidden>
@@ -293,13 +295,41 @@ waitlist?.addEventListener('submit', async (e) => {
   }
 });
 
-// Contact — TODO: send the message to a real backend.
+// Contact — sent via Web3Forms, lands in the inbox behind the access key
+// (SITE.web3formsKey). Subject + from_name mark it as coming from the site.
 const contact = document.querySelector('[data-form="contact"]');
 const contactDone = document.querySelector('[data-contact-done]');
-contact?.addEventListener('submit', (e) => {
+const contactError = document.querySelector('[data-contact-error]');
+contact?.addEventListener('submit', async (e) => {
   e.preventDefault();
-  contact.hidden = true;
-  contactDone.hidden = false;
+  const button = contact.querySelector('button[type="submit"]');
+  const data = new FormData(contact);
+  button.disabled = true;
+  contactError.hidden = true;
+  try {
+    if (!contact.dataset.key) throw new Error('Missing Web3Forms key');
+    const res = await fetch('https://api.web3forms.com/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        access_key: contact.dataset.key,
+        subject: `[Arc Website] New message from ${data.get('name')}`,
+        from_name: 'Arc Website',
+        name: data.get('name'),
+        email: data.get('email'),
+        message: data.get('message'),
+        botcheck: data.get('botcheck') ? true : '',
+      }),
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message);
+    contact.hidden = true;
+    contactDone.hidden = false;
+  } catch {
+    contactError.hidden = false;
+  } finally {
+    button.disabled = false;
+  }
 });
 document.querySelector('[data-contact-reset]')?.addEventListener('click', () => {
   contact.reset();

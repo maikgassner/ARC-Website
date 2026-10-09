@@ -434,3 +434,6 @@ h1, h2, h3, p { margin: 0; }
 [hidden] { display: none !important; }
 .waitlist-error { font-size: 14px; font-weight: 700; color: #fff; margin-top: 8px; }
 .waitlist-form button:disabled { opacity: .6; cursor: default; }
+.contact-error { font-size: 14px; font-weight: 600; color: var(--coral-ink); margin: 2px 0 0; }
+.contact-form button:disabled { opacity: .6; cursor: default; }
+.hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }

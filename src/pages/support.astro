@@ -1,6 +1,5 @@
 ---
 import Base from '../layouts/Base.astro';
-import { SITE } from '../data/site';
 
 // Paths match the app's menus (ARC, 2026-10-09).
 const faq = [
@@ -17,7 +16,7 @@ const faq = [
 <Base title="Support" description="Help with Arc, the skydiving logbook app.">
   <div class="wrap narrow support">
     <h1>Support</h1>
-    <p class="lead">Questions about Arc? Write to <a href={`mailto:${SITE.supportEmail}`}>{SITE.supportEmail}</a> — we usually answer within a day or two.</p>
+    <p class="lead">Questions about Arc? <a href="/#contact">Send us a message</a> — we usually answer within a day or two.</p>
 
     <h2>Frequently asked</h2>
     {faq.map(item => (

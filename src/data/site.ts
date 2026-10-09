@@ -5,7 +5,9 @@ export const SITE = {
   tagline: 'The skydiving logbook, signed by your crew.',
   description:
     'Arc is the logbook and community app for skydivers: log jumps, get them signed, keep licence and gear on hand, and check the DZ weather.',
-  supportEmail: 'maik.gassner@gmail.com',
+  // Contact form → Web3Forms → your inbox. The access key is public by design
+  // (it only lets people send *to* you). Get one at web3forms.com.
+  web3formsKey: '',
   privacyEmail: '[privacy email]',
   operator: '[operator name and address]',
   appStoreUrl: '', // set once Arc is live in the App Store
