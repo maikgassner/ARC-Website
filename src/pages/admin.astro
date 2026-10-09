@@ -298,5 +298,5 @@ import AdminShell from '../layouts/AdminShell.astro';
     return { rpc: async (fn: string) => ({ data: fn === 'admin_moderation_queue' ? queue : null, error: null }) } as any;
   }
 
-  initAdmin((client, e) => { sb = client; env = e; return load(); }, demoClient);
+  initAdmin((client, e) => { sb = client; env = e; return load(); }, import.meta.env.DEV ? demoClient : undefined);
 </script>

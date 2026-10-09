@@ -719,5 +719,5 @@ import AdminShell from '../../layouts/AdminShell.astro';
       if (location.search.includes('edit')) openEditor('dz', places.find((p) => p.kind === 'dz' && p.avatar_path)!);
       else if (location.search.includes('new')) openEditor('tunnel', null);
     }
-  }, demoClient);
+  }, import.meta.env.DEV ? demoClient : undefined);
 </script>
