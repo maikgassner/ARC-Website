@@ -434,3 +434,19 @@ h1, h2, h3, p { margin: 0; }
 [hidden] { display: none !important; }
 .waitlist-error { font-size: 14px; font-weight: 700; color: #fff; margin-top: 8px; }
 .waitlist-form button:disabled { opacity: .6; cursor: default; }
+
+/* Sneak peek of an upcoming feature */
+.sneak { margin-top: 20px; font-size: 16px; line-height: 1.6; color: var(--fg); font-weight: 600; text-wrap: pretty; }
+.sneak-badge {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--coral-tint);
+  color: var(--coral-ink);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  vertical-align: 2px;
+}
