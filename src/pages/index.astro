@@ -1,158 +1,307 @@
 ---
-import Base from '../layouts/Base.astro';
-import Canopy from '../components/Canopy.astro';
-import Phone from '../components/Phone.astro';
+// Landing page — rebuilt from the Claude Design export (ARC/docs/ARC Website v2.html).
+// Own nav/footer instead of the Base layout; the legal + support pages keep Base.
+import '../styles/landing.css';
 import { SITE } from '../data/site';
-
-// Same feature set as the App Store description (ARC/docs/app-store-listing.md)
-// — only what the app does today. Screenshots are real build captures.
-const features = [
-  {
-    kicker: 'Logbook',
-    title: 'Every jump, in seconds',
-    text: 'Log skydives and tunnel sessions with the details that matter — and get them signed by the people who were there.',
-    points: [
-      'DZ, discipline, altitudes, freefall, aircraft, canopy and who you jumped with.',
-      'Ask a friend to sign: name, role and licence number, right in the app.',
-      'Scan your paper logbook in, or import an Excel or CSV file.',
-      'Export everything as an Excel file anytime. Your data stays yours.',
-    ],
-    screens: [
-      { src: '/img/screens/logbook.jpg', alt: 'Skydive log with jumps grouped by month' },
-      { src: '/img/screens/log-jump.jpg', alt: 'Log a jump: date, dropzone, gear, discipline and exit altitude' },
-    ],
-  },
-  {
-    kicker: 'Dropzones & tunnels',
-    title: 'Know before you drive out',
-    text: 'Every dropzone and wind tunnel on one map — with the weather that matters for jumping.',
-    points: [
-      'Altitude, aircraft, opening hours, prices, photos and reviews.',
-      'Hourly forecast, winds aloft, clouds by altitude and Föhn warnings for the Alps.',
-      'Webcams, contact and directions right on the DZ page.',
-      'The community keeps it current — suggest changes or add a new DZ.',
-    ],
-    screens: [{ src: '/img/screens/map.jpg', alt: 'Map of dropzones and wind tunnels around Zurich' }],
-  },
-  {
-    kicker: 'Skill profile',
-    title: 'Show what you fly',
-    text: 'Belly, freefly, angle, wingsuit, tunnel, canopy — your skills at a glance, on your profile.',
-    points: [
-      'Freefall and tunnel air time, always up to date.',
-      'Licence, ratings, AAD, repacks and insurance — and when they\'re due.',
-      'Your rigs with exit weight and wingload.',
-      'A one-page skydiver profile PDF for manifest and organisers.',
-    ],
-    screens: [
-      { src: '/img/screens/skill-bodyfly-sky.jpg', alt: 'Skill profile chart for bodyflying in the sky' },
-      { src: '/img/screens/skill-canopy.jpg', alt: 'Skill profile chart for canopy flying' },
-    ],
-  },
-  {
-    kicker: 'Your crew',
-    title: 'Jump with your people',
-    text: 'Add the people you jump with, follow their jumps and plan the next load together.',
-    points: [
-      'Feed with your friends\' jumps, milestones and posts.',
-      'Chat, share posts and plan jump days and boogies with events.',
-      'Emergency contact — and, if you choose, medical info — your friends can see when it matters.',
-    ],
-    screens: [{ src: '/img/screens/home.jpg', alt: 'Home with upcoming events and friend suggestions' }],
-  },
-];
+const year = new Date().getFullYear();
 ---
-<Base>
-  <section class="hero">
-    <div class="wrap hero-inner">
-      <div class="hero-text">
-        <Canopy size={84} label="Arc" />
-        <h1>Every jump.<br />Signed by your crew.</h1>
-        <p class="lead">{SITE.description}</p>
-        {SITE.appStoreUrl
-          ? <a class="cta" href={SITE.appStoreUrl}>Download on the App Store</a>
-          : <p class="soon">Coming soon to iPhone · free for jumpers</p>}
-      </div>
-      <div class="hero-phone">
-        <Phone src="/img/screens/logbook.jpg" alt="Arc skydive logbook" eager tilt="right" />
-      </div>
-    </div>
-  </section>
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arc — Your digital skydive logbook</title>
+  <meta name="description" content="The logbook and skydiving network you've been waiting for. Log every jump in seconds, watch your skills grow and connect with jumpers at every dropzone.">
+  <meta property="og:title" content="Arc — Your digital skydive logbook">
+  <meta property="og:description" content="The logbook and skydiving network you've been waiting for.">
+  <meta property="og:image" content="/img/arc-icon-512.png">
+  <meta name="theme-color" content="#b23a22">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/img/arc-icon-512.png">
+  <link rel="preload" href="/fonts/jakarta-latin.woff2" as="font" type="font/woff2" crossorigin>
+</head>
+<body>
 
-  <div id="features" class="wrap">
-    <h2 class="sr-only">Features</h2>
-    {features.map((f, i) => (
-      <section class:list={['feature', i % 2 === 1 && 'flip']}>
-        <div class="feature-text">
-          <p class="kicker">{f.kicker}</p>
-          <h3>{f.title}</h3>
-          <p class="feature-lead">{f.text}</p>
-          <ul>{f.points.map(p => <li>{p}</li>)}</ul>
-        </div>
-        <div class:list={['feature-phones', f.screens.length > 1 && 'pair']}>
-          {f.screens.map((s, j) => (
-            <Phone src={s.src} alt={s.alt} tilt={f.screens.length > 1 ? (j === 0 ? 'left' : 'right') : undefined} />
-          ))}
-        </div>
-      </section>
-    ))}
+<!-- ============================ HERO ============================ -->
+<header id="home" class="hero">
+  <div class="glow"></div>
+
+  <nav class="nav wrap">
+    <a href="#home" class="brand" aria-label="Arc">
+      <svg viewBox="0 0 60.06 60.06" width="32" height="32" aria-hidden="true"><rect width="60.06" height="60.06" rx="14" fill="rgba(255,255,255,.16)"/><path d="M51.4,42.07c-2.88-.14-8.31-12.01-21.36-12.01-13.85,0-19.6,12.22-21.21,12.22-4.81,0,8.18-24.5,21.31-24.5s25.48,24.5,21.26,24.29Z" fill="#fff"/></svg>
+      <span>Arc</span>
+    </a>
+    <div class="nav-links">
+      <a href="#home" class="active">Home</a>
+      <a href="#mission">About Arc</a>
+      <a href="#about">Über uns</a>
+      <a href="#contact">Kontakt</a>
+    </div>
+    <a href="#waitlist" class="nav-cta"><span class="dot"></span>Coming soon</a>
+  </nav>
+
+  <div class="hero-body wrap">
+    <div class="overline">Logbook · Skill profile · Network</div>
+    <h1>Your digital skydive logbook.</h1>
+    <p class="hero-lede">The logbook and skydiving network you've been waiting for. Log every jump in seconds, watch your skills grow and connect with jumpers at every dropzone.</p>
+
+    <div id="waitlist" class="waitlist">
+      <div class="badge"><span class="dot"></span>Coming soon to iOS</div>
+      <div data-waitlist-open>
+        <form class="waitlist-form" data-form="waitlist">
+          <input required type="email" name="email" placeholder="Your email" aria-label="Your email">
+          <button type="submit" class="btn-coral">Join the waitlist</button>
+        </form>
+        <p class="waitlist-note">Be the first to know when Arc launches. No spam, just the launch.</p>
+        <p class="waitlist-error" data-waitlist-error hidden>Something went wrong. Please try again.</p>
+      </div>
+      <div class="waitlist-done" data-waitlist-done hidden>You're on the list. We'll email you at launch.</div>
+      <a href="#mission" class="link-underline">See what's inside</a>
+    </div>
+
+    <div class="hero-phones">
+      <div class="phone"><img src="/img/landing/logbook.jpg" alt="Logbuch" width="640" height="1385"></div>
+      <div class="phone center"><img src="/img/landing/profile.jpg" alt="Profil" width="640" height="1385"></div>
+      <div class="phone"><img src="/img/landing/map.jpg" alt="Karte" width="640" height="1385"></div>
+    </div>
+  </div>
+</header>
+
+<main>
+<!-- ======================= ABOUT ARC / FEATURES ======================= -->
+<section id="mission" class="mission wrap">
+  <div class="mission-head">
+    <div>
+      <div class="overline">About Arc · Unsere Mission</div>
+      <h2 class="section-title">Das Logbuch, das mit dir Schritt hält.</h2>
+    </div>
+    <p class="lede">Papier-Logbücher gehen verloren, Tabellen sind mühsam. Arc macht aus jedem Sprung einen sauberen Datensatz und zeigt dir, wo du stehst: über Disziplinen, Dropzones und Jahre hinweg.</p>
   </div>
 
-  <section class="wrap narrow note">
-    <h2>Free for jumpers</h2>
-    <p>
-      Arc is built by a skydiver for skydivers. Logging, signatures, documents, the DZ map and weather are free — no ads, and we don't sell your data.
-    </p>
-    <p class="small">
-      Arc is a record-keeping and social app. It doesn't replace your dropzone's, instructor's or licensing body's rules, and doesn't verify what users enter. Weather is a forecast — always follow your DZ.
-    </p>
-  </section>
-</Base>
+  <div class="features">
 
-<style>
-  .hero {
-    background: linear-gradient(180deg, var(--brand-top), var(--brand-bottom));
-    color: var(--cream);
-    padding-block: clamp(48px, 8vw, 96px);
-    overflow: hidden;
-  }
-  .hero-inner { display: grid; gap: 48px; align-items: center; }
-  .hero-text { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 18px; }
-  .hero h1 { font-size: clamp(2.2rem, 5.5vw, 3.6rem); font-weight: 800; margin: 0; }
-  .lead { max-width: 520px; font-size: 1.1rem; margin: 0; color: #fff; }
-  .soon {
-    margin: 4px 0 0; padding: 10px 18px; border-radius: 999px;
-    background: rgba(253, 245, 230, 0.16); border: 1px solid rgba(253, 245, 230, 0.4);
-    font-weight: 700; font-size: 0.95rem; color: #fff;
-  }
-  .cta { margin-top: 4px; padding: 14px 24px; border-radius: 14px; background: var(--cream); color: var(--brand-bottom); font-weight: 800; text-decoration: none; }
-  .hero-phone { display: flex; justify-content: center; }
-  @media (min-width: 880px) {
-    .hero-inner { grid-template-columns: 1.2fr 1fr; }
-    .hero-text { align-items: flex-start; text-align: left; }
-  }
+    <!-- 01 Logbuch -->
+    <div class="feature">
+      <div class="stage">
+        <div class="phone"><img src="/img/landing/logbook.jpg" alt="Skydive-Logbuch" width="640" height="1385" loading="lazy"></div>
+      </div>
+      <div class="feature-text">
+        <div class="kicker">01 — Logbuch</div>
+        <h3>Jeder Sprung, sauber dokumentiert.</h3>
+        <p class="lede">Sprungnummer, Disziplin und Dropzone, chronologisch nach Monaten. Suchen, filtern und jeden Sprung in Sekunden wiederfinden.</p>
+      </div>
+    </div>
 
-  .feature {
-    display: grid; gap: 40px; align-items: center;
-    padding-block: clamp(48px, 7vw, 88px);
-    border-bottom: 1px solid var(--border);
-  }
-  .feature:last-child { border-bottom: 0; }
-  .kicker { margin: 0 0 6px; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-text); }
-  .feature h3 { font-size: clamp(1.7rem, 3.6vw, 2.4rem); font-weight: 800; }
-  .feature-lead { color: var(--fg-2); font-size: 1.1rem; margin: 0 0 16px; }
-  .feature ul { margin: 0; padding-left: 1.1em; color: var(--fg-2); }
-  .feature li { margin-bottom: 8px; }
-  .feature li::marker { color: var(--action); }
-  .feature-phones { display: flex; justify-content: center; gap: 20px; }
-  .feature-phones.pair :global(.phone) { width: min(46%, 250px); }
-  @media (min-width: 880px) {
-    .feature { grid-template-columns: 1fr 1fr; gap: 64px; }
-    .feature.flip .feature-text { order: 2; }
-  }
+    <!-- 02 Loggen -->
+    <div class="feature" data-tabs>
+      <div class="feature-text end">
+        <div class="kicker">02 — Loggen</div>
+        <h3>Geloggt, bevor der Schirm gepackt ist.</h3>
+        <p class="lede">Datum, Dropzone, Gear, Disziplin, Exit-Höhe und Freifallzeit. Tunnel-Sessions mit Flugzeit, Coach und Windgeschwindigkeit.</p>
+        <div class="tabs" role="tablist">
+          <button role="tab" aria-selected="true" data-src="/img/landing/log-skydive.jpg">Skydive</button>
+          <button role="tab" aria-selected="false" data-src="/img/landing/log-tunnel.jpg">Tunnel</button>
+        </div>
+      </div>
+      <div class="stage left-glow">
+        <div class="phone"><img data-tab-target src="/img/landing/log-skydive.jpg" alt="Sprung loggen" width="640" height="1385" loading="lazy"></div>
+      </div>
+    </div>
 
-  .note { margin-top: 32px; text-align: center; }
-  .note h2 { font-size: 1.8rem; }
-  .note p { color: var(--fg-2); }
-  .small { font-size: 0.9rem; color: var(--fg-3) !important; }
-</style>
+    <!-- 03 Skill-Profil -->
+    <div class="feature" data-tabs>
+      <div class="stage">
+        <div class="phone"><img data-tab-target src="/img/landing/skill-sky.jpg" alt="Skill-Profil" width="640" height="1385" loading="lazy"></div>
+      </div>
+      <div class="feature-text">
+        <div class="kicker">03 — Skill-Profil</div>
+        <h3>Sieh, wie du wächst.</h3>
+        <p class="lede">Dein Können als Radar über Bodyfly Sky, Bodyfly Indoor und Canopy. Dazu deine Air Time in Freifall und Tunnel.</p>
+        <div class="tabs" role="tablist">
+          <button role="tab" aria-selected="true" data-src="/img/landing/skill-sky.jpg">Bodyfly Sky</button>
+          <button role="tab" aria-selected="false" data-src="/img/landing/skill-indoor.jpg">Bodyfly Indoor</button>
+          <button role="tab" aria-selected="false" data-src="/img/landing/skill-canopy.jpg">Canopy</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 04 Karte -->
+    <div class="feature">
+      <div class="feature-text end">
+        <div class="kicker">04 — Karte</div>
+        <h3>Dropzones und Tunnels weltweit.</h3>
+        <p class="lede">Entdecke Sprungplätze und Windkanäle auf der Karte, filtere nach Typ und speichere deine Favoriten für den nächsten Trip.</p>
+      </div>
+      <div class="stage left-glow">
+        <div class="phone"><img src="/img/landing/map.jpg" alt="Karte" width="640" height="1385" loading="lazy"></div>
+      </div>
+    </div>
+
+    <!-- 05 Dropzone-Details -->
+    <div class="feature" data-tabs>
+      <div class="stage">
+        <div class="phone"><img data-tab-target src="/img/landing/dz-weather.jpg" alt="Dropzone-Details" width="640" height="1385" loading="lazy"></div>
+      </div>
+      <div class="feature-text">
+        <div class="kicker">05 — Dropzone-Details</div>
+        <h3>Das Wetter, bevor du losfährst.</h3>
+        <p class="lede">Jede Dropzone hat ihre eigene Detailseite: 5-Tage-Prognose, Höhenwinde und Temperaturen im Luftprofil, Wolken im Vergleich zu deiner Exit-Höhe und die Föhn-Tendenz. Dazu die Infrastruktur vor Ort.</p>
+        <div class="tabs" role="tablist">
+          <button role="tab" aria-selected="true" data-src="/img/landing/dz-weather.jpg">Wetter &amp; Höhenwinde</button>
+          <button role="tab" aria-selected="false" data-src="/img/landing/dz-clouds.jpg">Wolken &amp; Föhn</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 06 Community -->
+    <div class="feature" data-tabs>
+      <div class="feature-text end">
+        <div class="kicker">06 — Community</div>
+        <h3>Gemeinsam in der Luft.</h3>
+        <p class="lede">Im Home-Feed siehst du Posts deiner Freunde mit Fotos, Likes und Kommentaren. Dazu Boogies und Sunset Loads und Jumper in deiner Nähe.</p>
+        <div class="tabs" role="tablist">
+          <button role="tab" aria-selected="true" data-src="/img/landing/feed.jpg">Feed</button>
+          <button role="tab" aria-selected="false" data-src="/img/landing/post.jpg">Post</button>
+          <button role="tab" aria-selected="false" data-src="/img/landing/events.jpg">Events &amp; Freunde</button>
+        </div>
+      </div>
+      <div class="stage left-glow">
+        <div class="phone"><img data-tab-target src="/img/landing/feed.jpg" alt="Community" width="640" height="1385" loading="lazy"></div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================ ÜBER UNS ============================ -->
+<section id="about" class="about wrap">
+  <div class="about-grid">
+    <div>
+      <div class="overline">Über uns</div>
+      <h2 class="section-title">Von Skydivern, für Skydiver.</h2>
+      <p class="lede">Arc entsteht in der Schweiz, zwischen Hangar und Landeplatz. Wir springen selbst und wollten ein Logbuch, das so präzise ist wie ein guter Jump Run.</p>
+    </div>
+    <!-- TODO: Teamfoto als public/img/landing/team.jpg ablegen und den Platzhalter durch <img src="/img/landing/team.jpg" alt="Das Arc-Team"> ersetzen -->
+    <div class="photo-slot">Teamfoto oder Dropzone</div>
+  </div>
+</section>
+</main>
+
+<!-- ============================ KONTAKT ============================ -->
+<section id="contact" class="contact">
+  <div class="contact-card">
+    <div class="glow"></div>
+    <div class="contact-grid">
+      <div>
+        <div class="overline">Kontakt</div>
+        <h2>Sag Hallo.</h2>
+        <p class="contact-lede">Fragen, Feedback oder deine Dropzone auf die Karte bringen? Schreib uns.</p>
+        <a href={`mailto:${SITE.supportEmail}`} class="link-underline">{SITE.supportEmail}</a>
+      </div>
+
+      <form class="contact-form" data-form="contact">
+        <div class="row">
+          <input required name="name" placeholder="Name" aria-label="Name">
+          <input required type="email" name="email" placeholder="E-Mail" aria-label="E-Mail">
+        </div>
+        <textarea name="message" placeholder="Deine Nachricht" rows="5" aria-label="Deine Nachricht"></textarea>
+        <button type="submit" class="btn-coral">Nachricht senden</button>
+      </form>
+
+      <div class="contact-done" data-contact-done hidden>
+        <strong>Danke, ist angekommen.</strong>
+        <p>Wir melden uns in der Regel innert zwei Tagen.</p>
+        <button type="button" data-contact-reset>Neue Nachricht</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <a href="#home" class="brand" aria-label="Arc">
+      <svg viewBox="0 0 60.06 60.06" width="26" height="26" aria-hidden="true"><defs><linearGradient id="arcft" x1="30" y1="63" x2="30" y2="-70" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8f0000"/><stop offset=".63" stop-color="#ffa54e"/></linearGradient></defs><rect width="60.06" height="60.06" rx="13" fill="url(#arcft)"/><path d="M51.4,42.07c-2.88-.14-8.31-12.01-21.36-12.01-13.85,0-19.6,12.22-21.21,12.22-4.81,0,8.18-24.5,21.31-24.5s25.48,24.5,21.26,24.29Z" fill="#fff"/></svg>
+      <span>Arc</span>
+    </a>
+    <div class="footer-links">
+      <a href="#home">Home</a>
+      <a href="#mission">About Arc</a>
+      <a href="#about">Über uns</a>
+      <a href="#contact">Kontakt</a>
+      <a href="/support">Support</a>
+      <a href="/privacy">Datenschutz</a>
+      <a href="/terms">AGB</a>
+    </div>
+    <div>© {year} Arc</div>
+  </footer>
+</section>
+
+<script>
+// Arc website — tab switching for the feature screenshots + form states.
+
+// Feature tabs: each [data-tabs] block swaps its [data-tab-target] image.
+document.querySelectorAll('[data-tabs]').forEach((block) => {
+  const img = block.querySelector('[data-tab-target]');
+  const buttons = block.querySelectorAll('[role="tab"]');
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      buttons.forEach((b) => b.setAttribute('aria-selected', String(b === btn)));
+      img.src = btn.dataset.src;
+    });
+  });
+});
+
+// Preload the alternate tab screenshots so switching is instant.
+window.addEventListener('load', () => {
+  document.querySelectorAll('[role="tab"][data-src]').forEach((btn) => {
+    new Image().src = btn.dataset.src;
+  });
+});
+
+// Waitlist — stored in Supabase (PROD) via the join_waitlist RPC
+// (supabase/migrations/0086_waitlist.sql). The publishable key is public
+// by design; the table is only writable through that function.
+const SUPABASE_URL = 'https://jbcfgxxdbnjtxclygpgm.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_FlWYjGOw7Db-HwB8Exx3VQ_Ds35WLl9';
+
+const waitlist = document.querySelector('[data-form="waitlist"]');
+const waitlistError = document.querySelector('[data-waitlist-error]');
+waitlist?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const button = waitlist.querySelector('button');
+  button.disabled = true;
+  waitlistError.hidden = true;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/join_waitlist`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+      },
+      body: JSON.stringify({ p_email: waitlist.email.value }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    document.querySelector('[data-waitlist-open]').hidden = true;
+    document.querySelector('[data-waitlist-done]').hidden = false;
+  } catch {
+    waitlistError.hidden = false;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+// Contact — TODO: send the message to a real backend.
+const contact = document.querySelector('[data-form="contact"]');
+const contactDone = document.querySelector('[data-contact-done]');
+contact?.addEventListener('submit', (e) => {
+  e.preventDefault();
+  contact.hidden = true;
+  contactDone.hidden = false;
+});
+document.querySelector('[data-contact-reset]')?.addEventListener('click', () => {
+  contact.reset();
+  contact.hidden = false;
+  contactDone.hidden = true;
+});
+</script>
+</body>
+</html>

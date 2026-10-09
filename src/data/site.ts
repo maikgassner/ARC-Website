@@ -5,7 +5,7 @@ export const SITE = {
   tagline: 'The skydiving logbook, signed by your crew.',
   description:
     'Arc is the logbook and community app for skydivers: log jumps, get them signed, keep licence and gear on hand, and check the DZ weather.',
-  supportEmail: '[support email]',
+  supportEmail: 'maik.gassner@gmail.com',
   privacyEmail: '[privacy email]',
   operator: '[operator name and address]',
   appStoreUrl: '', // set once Arc is live in the App Store
