@@ -3,44 +3,10 @@
 // Data + actions go through admin_moderation_queue() / admin_review()
 // (ARC/supabase/migrations/0087_admin_moderation.sql) — only users in the
 // admins table get past them. Not linked anywhere, noindex.
-import Base from '../layouts/Base.astro';
+import AdminShell from '../layouts/AdminShell.astro';
 ---
-<Base title="Moderation" noindex>
-  <div class="wrap admin">
-
-    <header class="admin-head">
-      <div>
-        <p class="eyebrow">Arc admin</p>
-        <h1>Moderation</h1>
-        <p class="sub">Everything waiting for your approval.</p>
-      </div>
-      <div class="admin-tools">
-        <div class="env" role="radiogroup" aria-label="Database">
-          <button type="button" role="radio" data-env="prod"><span class="dot"></span>PROD</button>
-          <button type="button" role="radio" data-env="test"><span class="dot"></span>TEST</button>
-        </div>
-        <button type="button" class="icon-btn" data-refresh hidden aria-label="Refresh" title="Refresh">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-        </button>
-        <button type="button" class="ghost-btn" data-signout hidden>Sign out</button>
-      </div>
-    </header>
-
-    <!-- Login -->
-    <form class="login" data-login hidden>
-      <div class="login-mark">
-        <svg viewBox="0 0 60.06 60.06" width="44" height="44" aria-hidden="true"><defs><linearGradient id="lg" x1="30" y1="63" x2="30" y2="-70" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8f0000"/><stop offset=".63" stop-color="#ffa54e"/></linearGradient></defs><rect width="60.06" height="60.06" rx="13" fill="url(#lg)"/><path d="M51.4,42.07c-2.88-.14-8.31-12.01-21.36-12.01-13.85,0-19.6,12.22-21.21,12.22-4.81,0,8.18-24.5,21.31-24.5s25.48,24.5,21.26,24.29Z" fill="#fff"/></svg>
-      </div>
-      <h2>Admin sign-in</h2>
-      <p>Use your Arc account.</p>
-      <input name="email" type="email" placeholder="Email" required autocomplete="username">
-      <input name="password" type="password" placeholder="Password" required autocomplete="current-password">
-      <button type="submit" class="primary-btn">Sign in</button>
-    </form>
-
-    <p class="status" data-status></p>
-
-    <div data-queue hidden>
+<AdminShell title="Moderation" sub="Everything waiting for your approval." active="moderation">
+    <div data-queue>
       <!-- Summary tiles double as filters -->
       <div class="tiles" role="tablist">
         <button type="button" class="tile" role="tab" data-filter="all">
@@ -76,68 +42,9 @@ import Base from '../layouts/Base.astro';
         <p data-allclear-text>Nothing waiting for approval. Go jump.</p>
       </div>
     </div>
-  </div>
-
-  <dialog class="lightbox" data-lightbox><img alt=""></dialog>
-  <div class="toast" data-toast role="status" aria-live="polite"></div>
-</Base>
+</AdminShell>
 
 <style>
-  /* Component display rules (grid/flex) would otherwise beat the hidden attribute. */
-  :global([hidden]) { display: none !important; }
-
-  .admin { --ok: #3e9e76; --ok-press: #348a66; --no: #c64e2c; --no-tint: #fdeee8; --amber: #e3a23e; padding-top: 40px; padding-bottom: 40px; }
-
-  /* ---------- Header ---------- */
-  .admin-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
-  .eyebrow { margin: 0; font-size: .75rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--accent-text); }
-  .admin-head h1 { margin: 4px 0 0; font-size: clamp(2rem, 5vw, 2.6rem); font-weight: 800; }
-  .sub { margin: 4px 0 0; color: var(--fg-2); }
-  .admin-tools { display: flex; gap: 10px; align-items: center; }
-
-  .env { display: flex; gap: 4px; padding: 4px; border-radius: 999px; background: var(--ink-100); }
-  .env button {
-    display: inline-flex; align-items: center; gap: 7px; border: 0; cursor: pointer;
-    font: 800 .8rem var(--font); letter-spacing: .06em; padding: 8px 14px; border-radius: 999px;
-    background: transparent; color: var(--fg-3); transition: background .15s, color .15s;
-  }
-  .env .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: .5; }
-  .env button[aria-checked="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 3px rgba(41, 43, 44, .12); }
-  .env button[data-env="prod"][aria-checked="true"] .dot { background: var(--no); opacity: 1; box-shadow: 0 0 0 3px rgba(198, 78, 44, .18); }
-  .env button[data-env="test"][aria-checked="true"] .dot { background: var(--amber); opacity: 1; box-shadow: 0 0 0 3px rgba(227, 162, 62, .2); }
-
-  .icon-btn, .ghost-btn {
-    display: inline-grid; place-items: center; height: 40px; border-radius: 999px; cursor: pointer;
-    border: 1px solid var(--border); background: var(--surface); color: var(--fg-2);
-    font: 700 .9rem var(--font); transition: color .15s, border-color .15s, transform .15s;
-  }
-  .icon-btn { width: 40px; }
-  .ghost-btn { padding: 0 16px; }
-  .icon-btn:hover, .ghost-btn:hover { color: var(--fg); border-color: var(--fg-3); }
-  .icon-btn.spin svg { animation: spin .7s linear; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  /* ---------- Login ---------- */
-  .login {
-    display: grid; gap: 12px; max-width: 380px; margin: 48px auto 0; padding: 32px 28px;
-    background: var(--surface); border-radius: 24px; box-shadow: var(--shadow); text-align: center;
-  }
-  .login-mark { display: grid; place-items: center; margin-bottom: 4px; }
-  .login h2 { margin: 0; font-size: 1.4rem; }
-  .login p { margin: 0 0 8px; color: var(--fg-2); font-size: .95rem; }
-  .login input {
-    font: inherit; font-size: 1rem; padding: 13px 16px; border-radius: 14px;
-    border: 1px solid var(--border); background: var(--bg); color: var(--fg); outline: none;
-  }
-  .login input:focus { border-color: var(--coral-500); background: var(--surface); }
-  .primary-btn {
-    margin-top: 4px; border: 0; cursor: pointer; border-radius: 999px; padding: 14px 20px;
-    font: 800 1rem var(--font); color: #fff; background: linear-gradient(180deg, var(--brand-top), var(--brand-bottom));
-  }
-  .primary-btn:active { transform: scale(.98); }
-
-  .status { color: var(--fg-2); min-height: 1.6em; margin-top: 16px; text-align: center; }
-
   /* ---------- Tiles ---------- */
   .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 8px; }
   .tile {
@@ -153,8 +60,8 @@ import Base from '../layouts/Base.astro';
   @media (max-width: 640px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
 
   /* ---------- Sections ---------- */
-  .admin section { margin-top: 36px; }
-  .admin section > h2 { font-size: 1.15rem; margin: 0 0 14px; }
+  section { margin-top: 36px; }
+  section > h2 { font-size: 1.15rem; margin: 0 0 14px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
   .stack { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 16px; }
 
@@ -211,88 +118,27 @@ import Base from '../layouts/Base.astro';
   :global(.actions .reject:hover) { border-color: var(--no); background: var(--no-tint); }
   :global(.empty) { margin: 0; padding: 18px; border-radius: 16px; border: 1.5px dashed var(--border); color: var(--fg-3); text-align: center; font-size: .92rem; }
 
-  /* ---------- Lightbox + toast ---------- */
-  .lightbox { padding: 0; border: 0; border-radius: 16px; max-width: 92vw; max-height: 92vh; background: #000; }
-  .lightbox::backdrop { background: rgba(0, 0, 0, .75); }
-  .lightbox img { display: block; max-width: 92vw; max-height: 92vh; object-fit: contain; }
-
-  .toast {
-    position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
-    padding: 12px 18px; border-radius: 999px; background: var(--fg); color: #fff; font-weight: 700; font-size: .92rem;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, .2); transition: opacity .2s, transform .2s; z-index: 20; white-space: nowrap;
-  }
-  .toast.show { opacity: 1; transform: translate(-50%, 0); }
 </style>
 
 <script>
-  import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+  import type { SupabaseClient } from '@supabase/supabase-js';
+  import { el, add, svgIcon as svg, photoUrl, openLightbox, toast, initAdmin, showError, type Env } from '../lib/admin';
 
-  // Publishable keys — public by design, same as in the app.
-  const ENVS = {
-    prod: { url: 'https://jbcfgxxdbnjtxclygpgm.supabase.co', key: 'sb_publishable_FlWYjGOw7Db-HwB8Exx3VQ_Ds35WLl9' },
-    test: { url: 'https://mgqsxbzqdgvgvnukvknp.supabase.co', key: 'sb_publishable_45AbKAxYJPxCPVY3YMMnMQ_myH6LbsA' },
-  } as const;
-  type Env = keyof typeof ENVS;
   type List = 'photos' | 'creates' | 'edits';
 
   const $ = <T extends Element>(sel: string) => document.querySelector(sel) as T;
   const $$ = <T extends Element>(sel: string) => Array.from(document.querySelectorAll(sel)) as T[];
-  const loginForm = $<HTMLFormElement>('[data-login]');
-  const signOutBtn = $<HTMLButtonElement>('[data-signout]');
-  const refreshBtn = $<HTMLButtonElement>('[data-refresh]');
-  const statusEl = $<HTMLElement>('[data-status]');
-  const queueEl = $<HTMLElement>('[data-queue]');
   const allClear = $<HTMLElement>('[data-allclear]');
-  const lightbox = $<HTMLDialogElement>('[data-lightbox]');
-  const toastEl = $<HTMLElement>('[data-toast]');
 
-  let env: Env = 'prod';
-  try { if (localStorage.getItem('arc-admin-env') === 'test') env = 'test'; } catch {}
   let filter: 'all' | List = 'all';
   let counts: Record<List, number> = { photos: 0, creates: 0, edits: 0 };
   let sb: SupabaseClient;
-
-  const photoUrl = (path: string) => path.startsWith('/') ? path : `${ENVS[env].url}/storage/v1/object/public/location-photos/${path}`;
-
-  // Tiny element builder — all user content goes in as text, never as HTML.
-  function el(tag: string, props: Record<string, any> = {}, ...children: (Node | string | null | undefined | false)[]) {
-    const node = document.createElement(tag);
-    for (const [k, v] of Object.entries(props)) {
-      if (k === 'class') node.className = v;
-      else if (k.startsWith('on')) node.addEventListener(k.slice(2), v);
-      else (node as any)[k] = v;
-    }
-    for (const c of children) if (c) node.append(c);
-    return node;
-  }
-  // Like node.append, but skips the false/undefined from `cond && el(...)`.
-  const add = (node: Element, ...kids: (Node | string | null | undefined | false | 0)[]) =>
-    kids.forEach((k) => { if (k) node.append(k); });
-  const svg = (d: string) => {
-    const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('width', '16'); s.setAttribute('height', '16');
-    s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor'); s.setAttribute('stroke-width', '3');
-    s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round');
-    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', d); s.append(p);
-    return s;
-  };
-
-  let toastTimer: number | undefined;
-  function toast(msg: string) {
-    toastEl.textContent = msg;
-    toastEl.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = window.setTimeout(() => toastEl.classList.remove('show'), 2200);
-  }
+  let env: Env = 'prod';
 
   function thumb(path: string) {
-    const src = photoUrl(path);
-    return el('img', {
-      class: 'thumb', src, alt: '', loading: 'lazy',
-      onclick: () => { (lightbox.querySelector('img') as HTMLImageElement).src = src; lightbox.showModal(); },
-    });
+    const src = photoUrl(env, path);
+    return el('img', { class: 'thumb', src, alt: '', loading: 'lazy', onclick: () => openLightbox(src) });
   }
-  lightbox.addEventListener('click', () => lightbox.close());
 
   const when = (iso: string) => new Date(iso).toLocaleString('de-CH', { dateStyle: 'medium', timeStyle: 'short' });
   const show = (v: unknown) =>
@@ -425,31 +271,18 @@ import Base from '../layouts/Base.astro';
     t.addEventListener('click', () => { filter = t.dataset.filter as typeof filter; applyFilter(); }));
 
   async function load() {
-    statusEl.textContent = 'Loading…';
     const { data, error } = await sb.rpc('admin_moderation_queue');
-    if (error) {
-      queueEl.hidden = true;
-      statusEl.textContent = error.message.includes('Not allowed')
-        ? 'This account is not an admin. Add it to the admins table (see migration 0087).'
-        : `Error: ${error.message}`;
-      return;
-    }
+    if (error) return showError(error.message);
     render('photos', data.photos, photoCard);
     render('creates', data.creates, createCard);
     render('edits', data.edits, editCard);
     counts = { photos: data.photos.length, creates: data.creates.length, edits: data.edits.length };
     updateCounts();
-    statusEl.textContent = '';
-    queueEl.hidden = false;
-  }
-
-  function paintEnv() {
-    $$<HTMLButtonElement>('[data-env]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.env === env)));
   }
 
   // Local preview with fake data: `npm run dev`, then /admin?demo.
   // import.meta.env.DEV is false in the build, so this never ships.
-  function startDemo() {
+  function demoClient(): SupabaseClient {
     const now = new Date().toISOString();
     const queue = {
       photos: [
@@ -462,48 +295,8 @@ import Base from '../layouts/Base.astro';
       edits: [{ source: 'dz_edit_submissions', id: '4', location: 'Skydive Zürich', note: 'New prices since September',
         changes: { altitude_ft: { from: 12000, to: 13000 }, facilities: { from: ['Bar'], to: ['Bar', 'Packing area'] } }, created_at: now, submitter: 'Sara K.' }],
     };
-    sb = { rpc: async (fn: string) => ({ data: fn === 'admin_moderation_queue' ? queue : null, error: null }) } as any;
-    loginForm.hidden = true;
-    signOutBtn.hidden = refreshBtn.hidden = false;
-    paintEnv();
-    load();
+    return { rpc: async (fn: string) => ({ data: fn === 'admin_moderation_queue' ? queue : null, error: null }) } as any;
   }
 
-  async function start() {
-    if (import.meta.env.DEV && location.search.includes('demo')) return startDemo();
-    paintEnv();
-    sb = createClient(ENVS[env].url, ENVS[env].key, { auth: { storageKey: `arc-admin-${env}` } });
-    const { data } = await sb.auth.getSession();
-    const signedIn = !!data.session;
-    loginForm.hidden = signedIn;
-    signOutBtn.hidden = refreshBtn.hidden = !signedIn;
-    queueEl.hidden = true;
-    statusEl.textContent = '';
-    if (signedIn) load();
-  }
-
-  loginForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const fd = new FormData(loginForm);
-    statusEl.textContent = 'Signing in…';
-    const { error } = await sb.auth.signInWithPassword({ email: String(fd.get('email')), password: String(fd.get('password')) });
-    if (error) { statusEl.textContent = `Sign-in failed: ${error.message}`; return; }
-    start();
-  });
-
-  signOutBtn.addEventListener('click', async () => { await sb.auth.signOut(); start(); });
-
-  refreshBtn.addEventListener('click', () => {
-    refreshBtn.classList.remove('spin'); void refreshBtn.offsetWidth; refreshBtn.classList.add('spin');
-    load();
-  });
-
-  $$<HTMLButtonElement>('[data-env]').forEach((b) => b.addEventListener('click', () => {
-    if (b.dataset.env === env) return;
-    env = b.dataset.env as Env;
-    try { localStorage.setItem('arc-admin-env', env); } catch {}
-    start();
-  }));
-
-  start();
+  initAdmin((client, e) => { sb = client; env = e; return load(); }, demoClient);
 </script>

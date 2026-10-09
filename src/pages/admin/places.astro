@@ -1,0 +1,723 @@
+---
+// Create / edit dropzones and tunnels from a desk — every field the app's
+// forms have, plus photos. Writes go through admin_save_location() &
+// friends (ARC/supabase/migrations/0089_admin_locations.sql); reads use the
+// public dropzones/tunnels tables. Field lists mirror ARC/app/suggest-edit.tsx.
+import AdminShell from '../../layouts/AdminShell.astro';
+---
+<AdminShell title="Places" sub="Add and edit dropzones and wind tunnels." active="places">
+
+  <!-- List view -->
+  <div data-list-view>
+    <div class="toolbar">
+      <input type="search" placeholder="Search by name, country or town…" data-search aria-label="Search">
+      <div class="kind-pills" role="tablist">
+        <button type="button" data-kind-filter="all" aria-selected="true">All</button>
+        <button type="button" data-kind-filter="dz" aria-selected="false">Dropzones</button>
+        <button type="button" data-kind-filter="tunnel" aria-selected="false">Tunnels</button>
+      </div>
+      <div class="new-btns">
+        <button type="button" class="primary-btn small" data-new="dz">+ New dropzone</button>
+        <button type="button" class="dark-btn small" data-new="tunnel">+ New tunnel</button>
+      </div>
+    </div>
+    <p class="list-count" data-list-count></p>
+    <div class="place-list" data-places></div>
+  </div>
+
+  <!-- Editor view -->
+  <form class="editor" data-editor hidden novalidate>
+    <div class="editor-head">
+      <button type="button" class="ghost-btn" data-back>← All places</button>
+      <div>
+        <span class="kind-tag" data-editor-kind></span>
+        <h2 data-editor-title></h2>
+      </div>
+    </div>
+    <div class="editor-grid" data-fields></div>
+    <div class="savebar">
+      <span class="savebar-hint" data-save-hint></span>
+      <button type="button" class="ghost-btn" data-cancel>Cancel</button>
+      <button type="submit" class="primary-btn" data-save>Save</button>
+    </div>
+  </form>
+</AdminShell>
+
+<style>
+  /* ---------- List ---------- */
+  .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  .toolbar input[type="search"] { flex: 1 1 260px; width: auto; }
+  .kind-pills { display: flex; gap: 6px; }
+  .kind-pills button, :global(.chip-suggest) {
+    border: 0; cursor: pointer; font: 600 .9rem var(--font); padding: 9px 16px; border-radius: 999px;
+    background: var(--ink-100); color: var(--fg-2); white-space: nowrap; transition: background .15s, color .15s;
+  }
+  .kind-pills button[aria-selected="true"] { background: var(--fg); color: #fff; }
+  .new-btns { display: flex; gap: 8px; margin-left: auto; }
+  :global(.small) { padding: 10px 16px !important; font-size: .9rem !important; }
+  :global(.dark-btn) {
+    border: 0; cursor: pointer; border-radius: 999px; padding: 13px 22px; font: 800 1rem var(--font);
+    background: var(--fg); color: #fff;
+  }
+  .list-count { color: var(--fg-3); font-size: .9rem; margin: 18px 0 10px; }
+  .place-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  :global(.place-row) {
+    display: flex; gap: 14px; align-items: center; text-align: left; cursor: pointer; width: 100%;
+    padding: 12px; border-radius: 18px; border: 0; background: var(--surface); box-shadow: var(--shadow);
+    font-family: var(--font); color: var(--fg); transition: transform .15s;
+  }
+  :global(.place-row:hover) { transform: translateY(-2px); }
+  :global(.place-avatar) {
+    width: 52px; height: 52px; flex: none; border-radius: 14px; object-fit: cover; display: grid; place-items: center;
+    background: var(--coral-50); color: var(--accent-text); font-weight: 800; font-size: 1.1rem;
+  }
+  :global(.place-avatar.tunnel) { background: #eef1f3; color: #54626c; }
+  :global(.place-row strong) { display: block; font-size: 1rem; line-height: 1.3; }
+  :global(.place-row small) { display: block; color: var(--fg-3); font-size: .82rem; margin-top: 2px; }
+  :global(.place-row .missing) { color: var(--amber); font-weight: 700; }
+
+  /* ---------- Editor ---------- */
+  .editor-head { display: flex; align-items: center; gap: 16px; margin-top: 16px; flex-wrap: wrap; }
+  .editor-head h2 { margin: 2px 0 0; font-size: 1.6rem; }
+  .kind-tag {
+    font-size: .7rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 999px; background: var(--coral-50); color: var(--accent-text);
+  }
+  .kind-tag.tunnel { background: #eef1f3; color: #54626c; }
+  .editor-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr)); gap: 16px; margin-top: 20px; align-items: start; }
+  :global(.fcard) { background: var(--surface); border-radius: 20px; box-shadow: var(--shadow); padding: 18px; display: grid; gap: 14px; }
+  :global(.fcard.wide) { grid-column: 1 / -1; }
+  :global(.fcard h3) { margin: 0; font-size: .75rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--fg-3); }
+  :global(.field) { display: grid; gap: 6px; }
+  :global(.field > span) { font-size: .85rem; font-weight: 700; color: var(--fg-2); }
+  :global(.field > span em) { font-style: normal; font-weight: 500; color: var(--fg-3); }
+  :global(.field input[readonly]) { color: var(--fg-3) !important; background: var(--ink-100) !important; cursor: not-allowed; }
+  :global(.row2) { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  :global(.hint) { margin: -4px 0 0; font-size: .8rem; color: var(--fg-3); }
+  :global(.hint a) { color: var(--accent-text); font-weight: 600; }
+
+  :global(.chips) { display: flex; flex-wrap: wrap; gap: 6px; }
+  :global(.chip) {
+    display: inline-flex; align-items: center; gap: 6px; padding: 7px 8px 7px 12px; border-radius: 999px;
+    background: var(--fg); color: #fff; font-size: .88rem; font-weight: 600;
+  }
+  :global(.chip button) {
+    border: 0; cursor: pointer; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+    background: rgba(255, 255, 255, .18); color: #fff; font-size: .8rem; line-height: 1;
+  }
+  :global(.chip-suggest) { font-size: .82rem; padding: 6px 12px; }
+  :global(.chip-suggest:hover) { color: var(--fg); }
+
+  :global(.hours) { display: grid; gap: 6px; }
+  :global(.hours label) { display: grid; grid-template-columns: 110px 1fr; align-items: center; gap: 10px; font-size: .9rem; font-weight: 600; color: var(--fg-2); }
+  :global(.hours input) { padding: 9px 12px !important; }
+  :global(.inline) { display: flex; gap: 8px; }
+  :global(.inline input) { flex: 1; }
+  :global(.inline button), :global(.mini-btn) {
+    flex: none; border: 1px solid var(--border); background: var(--surface); color: var(--fg-2); cursor: pointer;
+    border-radius: 12px; padding: 0 14px; font: 700 .85rem var(--font); min-height: 42px;
+  }
+  :global(.inline button:hover), :global(.mini-btn:hover) { color: var(--fg); border-color: var(--fg-3); }
+
+  :global(.cams) { display: grid; gap: 8px; }
+  :global(.cam) { display: grid; grid-template-columns: 84px 1fr auto; gap: 10px; align-items: center; padding: 8px; border-radius: 14px; background: var(--bg); }
+  :global(.cam img), :global(.cam .noimg) { width: 84px; height: 56px; border-radius: 10px; object-fit: cover; background: var(--ink-100); display: grid; place-items: center; font-size: .7rem; color: var(--fg-3); text-align: center; }
+  :global(.cam a) { font-size: .85rem; word-break: break-all; color: var(--fg); }
+
+  :global(.media) { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+  :global(.media-item) { position: relative; }
+  :global(.media-item img) { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 12px; display: block; background: var(--ink-100); cursor: zoom-in; }
+  :global(.media-item .del) {
+    position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%; border: 0; cursor: pointer;
+    background: rgba(0, 0, 0, .6); color: #fff; font-size: .85rem; display: grid; place-items: center;
+  }
+  :global(.avatar-row) { display: flex; gap: 14px; align-items: center; }
+  :global(.avatar-preview) { width: 88px; height: 88px; border-radius: 20px; object-fit: cover; background: var(--ink-100); flex: none; }
+  :global(.upload) {
+    display: grid; place-items: center; min-height: 90px; padding: 12px; border-radius: 14px; cursor: pointer; text-align: center;
+    border: 1.5px dashed var(--border); color: var(--fg-3); font-size: .88rem; font-weight: 600; transition: border-color .15s, color .15s;
+  }
+  :global(.upload:hover) { border-color: var(--fg-3); color: var(--fg); }
+  :global(.upload input) { display: none; }
+
+  .savebar {
+    position: sticky; bottom: 16px; z-index: 10; display: flex; gap: 10px; align-items: center; justify-content: flex-end;
+    margin-top: 20px; padding: 12px; border-radius: 999px; background: rgba(255, 255, 255, .92);
+    backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(41, 43, 44, .14);
+  }
+  .savebar-hint { margin-right: auto; padding-left: 10px; font-size: .88rem; color: var(--fg-3); }
+  @media (max-width: 640px) {
+    .new-btns { margin-left: 0; width: 100%; }
+    .new-btns button { flex: 1; }
+    :global(.row2) { grid-template-columns: 1fr; }
+    .savebar { border-radius: 20px; }
+  }
+</style>
+
+<script>
+  import type { SupabaseClient } from '@supabase/supabase-js';
+  import { el, add, photoUrl, openLightbox, toast, initAdmin, showError, BUCKET, type Env } from '../../lib/admin';
+
+  type Kind = 'dz' | 'tunnel';
+  type Place = Record<string, any> & { name: string };
+  type FieldType = 'text' | 'number' | 'textarea' | 'chips' | 'chipsText' | 'hours' | 'select';
+  type Field = { key: string; label: string; type: FieldType; placeholder?: string; hint?: string; suggest?: string[]; options?: [string, string][] };
+  type Section = { title: string; wide?: boolean; fields: Field[]; extra?: 'coords' | 'webcams' | 'media' };
+
+  const $ = <T extends Element>(sel: string) => document.querySelector(sel) as T;
+  const $$ = <T extends Element>(sel: string) => Array.from(document.querySelectorAll(sel)) as T[];
+
+  // ---------- Field definitions (mirror the app's suggest-edit form) ----------
+  const FACILITIES = ['Showers', 'Café & bar', 'Packing area', 'Gear rental', 'WiFi', 'Free parking', 'Restaurant', 'Shop', 'Briefing room', 'Video service', 'Kids area', 'Lockers'];
+  const STAY = ['Camper-friendly', 'Tent-friendly', 'On-site rooms', 'Bunkhouse', 'Hotels nearby'];
+  const TUNNEL_FACILITIES = ['Showers', 'Café & bar', 'Gear rental', 'Lockers', 'Free parking', 'Video service', 'Shop', 'Kids area', 'WiFi'];
+
+  const DZ_SECTIONS: Section[] = [
+    { title: 'Basics', extra: 'coords', fields: [
+      { key: 'name', label: 'Name', type: 'text', placeholder: 'Skydive Example' },
+      { key: 'country', label: 'Country', type: 'text', placeholder: 'Switzerland' },
+      { key: 'address', label: 'Address', type: 'text', placeholder: 'Airfield, 8320 Town' },
+    ] },
+    { title: 'Jumping', fields: [
+      { key: 'altitude_ft', label: 'Exit altitude', type: 'number', placeholder: '13000', hint: 'In feet' },
+      { key: 'aircraft', label: 'Aircraft', type: 'chipsText', placeholder: 'e.g. 2× Twin Otter — Enter to add', suggest: ['1× Cessna 208', '1× Pilatus Porter', '1× Twin Otter', '2× Twin Otter', '1× Cessna 182', '1× Skyvan', '1× Casa 212'] },
+      { key: 'hours', label: 'Opening hours', type: 'hours' },
+    ] },
+    { title: 'Contact', fields: [
+      { key: 'phone', label: 'Phone', type: 'text', placeholder: '+41 44 123 45 67' },
+      { key: 'website', label: 'Website', type: 'text', placeholder: 'skydive-example.ch' },
+    ] },
+    { title: 'Weather', fields: [
+      { key: 'foehn_region', label: 'Föhn region', type: 'select', options: [['', 'None (not Alpine)'], ['north', 'Alpine north side'], ['south', 'Alpine south side']] },
+      { key: 'foehn_region_label', label: 'Föhn region label', type: 'text', placeholder: 'Alpennordseite · Rheintal' },
+    ] },
+    { title: 'Description', wide: true, fields: [
+      { key: 'description', label: 'Description', type: 'textarea', placeholder: 'What makes this place special? Landing area, team, vibe, who it suits…' },
+    ] },
+    { title: 'Amenities', fields: [
+      { key: 'facilities', label: 'Facilities', type: 'chips', placeholder: 'Add a facility — Enter', suggest: FACILITIES },
+      { key: 'stay', label: 'Stay options', type: 'chips', placeholder: 'Add an option — Enter', suggest: STAY },
+    ] },
+    { title: 'Webcams', extra: 'webcams', fields: [] },
+    { title: 'Photos', wide: true, extra: 'media', fields: [] },
+  ];
+
+  const TUNNEL_SECTIONS: Section[] = [
+    { title: 'Basics', extra: 'coords', fields: [
+      { key: 'name', label: 'Name', type: 'text', placeholder: 'Windwerk Example' },
+      { key: 'location', label: 'Location', type: 'text', placeholder: 'Town, Country' },
+    ] },
+    { title: 'Tunnel', fields: [
+      { key: 'diameter', label: 'Diameter', type: 'text', placeholder: '4.3 m' },
+      { key: 'height', label: 'Height', type: 'text', placeholder: '17 m' },
+      { key: 'max_speed', label: 'Max speed', type: 'text', placeholder: '280 km/h' },
+      { key: 'hours', label: 'Opening hours', type: 'hours' },
+    ] },
+    { title: 'Contact', fields: [
+      { key: 'phone', label: 'Phone', type: 'text', placeholder: '+41 44 123 45 67' },
+      { key: 'website', label: 'Website', type: 'text', placeholder: 'windwerk-example.ch' },
+    ] },
+    { title: 'Pricing', fields: [
+      { key: 'currency', label: 'Currency', type: 'text', placeholder: 'CHF' },
+      { key: 'price_no_coach_regular', label: 'No coaching · regular', type: 'number', placeholder: '900', hint: 'Per hour' },
+      { key: 'price_no_coach_off', label: 'No coaching · off times', type: 'number', hint: 'Per hour' },
+      { key: 'price_coach_regular', label: 'Incl. coaching · regular', type: 'number', hint: 'Per hour' },
+      { key: 'price_coach_off', label: 'Incl. coaching · off times', type: 'number', hint: 'Per hour' },
+      { key: 'pricing_times_note', label: 'Regular / off times note', type: 'text', placeholder: 'Off times: Mon–Fri before 4 pm' },
+    ] },
+    { title: 'Description', wide: true, fields: [
+      { key: 'description', label: 'Description', type: 'textarea', placeholder: 'What makes this tunnel special?' },
+    ] },
+    { title: 'Amenities', fields: [
+      { key: 'facilities', label: 'Facilities', type: 'chips', placeholder: 'Add a facility — Enter', suggest: TUNNEL_FACILITIES },
+    ] },
+    { title: 'Photos', wide: true, extra: 'media', fields: [] },
+  ];
+
+  // ---------- Opening hours (port of ARC/utils/openingHours.ts) ----------
+  const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const SHORT = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+  const DAY = '(mon|tue|wed|thu|fri|sat|sun)[a-z]*\\.?';
+  const RANGE_OR_DAY = `${DAY}(?:\\s*[–—-]\\s*${DAY})?`;
+  const SPEC = new RegExp(`^((?:${RANGE_OR_DAY})(?:\\s*[,&/]\\s*(?:${RANGE_OR_DAY}))*)\\s*:?\\s*(.*)$`, 'i');
+  function daysIn(spec: string): number[] {
+    const out: number[] = [];
+    for (const part of spec.split(/\s*[,&/]\s*/)) {
+      const m = part.match(new RegExp(`^${DAY}(?:\\s*[–—-]\\s*${DAY})?$`, 'i'));
+      if (!m) continue;
+      const a = SHORT.indexOf(m[1].toLowerCase());
+      const b = m[2] ? SHORT.indexOf(m[2].toLowerCase()) : a;
+      for (let i = a; ; i = (i + 1) % 7) { out.push(i); if (i === b) break; }
+    }
+    return out;
+  }
+  const tidy = (v: string) => (/^closed$/i.test(v.trim()) ? 'Closed' : v.trim());
+  function parseHours(text?: string): string[] {
+    if (!text?.trim()) return Array(7).fill('');
+    const perDay: (string | null)[] = Array(7).fill(null);
+    let general: string | null = null;
+    for (const seg of text.split(/\s*[·;\n]\s*/).filter(Boolean)) {
+      const m = seg.trim().match(SPEC);
+      const days = m ? daysIn(m[1]) : [];
+      const value = m ? m[m.length - 1] : '';
+      if (m && days.length && value.trim()) days.forEach((d) => { perDay[d] = tidy(value); });
+      else general = tidy(seg);
+    }
+    const anyDay = perDay.some(Boolean);
+    return perDay.map((v) => { const x = v ?? general ?? (anyDay ? 'Closed' : ''); return x === 'Closed' ? '' : x; });
+  }
+  function serializeHours(values: string[]): string {
+    const v = values.map((x) => x.trim() || 'Closed');
+    if (values.every((x) => !x.trim())) return '';
+    if (v.every((x) => x === v[0])) return v[0];
+    const SH = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const parts: string[] = [];
+    for (let i = 0; i < 7; ) {
+      let j = i;
+      while (j + 1 < 7 && v[j + 1] === v[i]) j++;
+      parts.push(`${i === j ? SH[i] : `${SH[i]}–${SH[j]}`} ${v[i]}`);
+      i = j + 1;
+    }
+    return parts.join(' · ');
+  }
+
+  // Accepts "47.3847, 9.6997" (Google Maps right-click → copy) or a Maps URL.
+  function parseCoords(text: string): [number, number] | null {
+    const pats = [/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/, /@(-?\d+\.\d+),\s*(-?\d+\.\d+)/, /[?&](?:q|ll|query)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/, /(-?\d{1,3}\.\d+)\s*[,;\s]\s*(-?\d{1,3}\.\d+)/];
+    for (const p of pats) {
+      const m = text.match(p);
+      if (m) { const lat = +m[1], lng = +m[2]; if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return [lat, lng]; }
+    }
+    return null;
+  }
+
+  // Downscale big desk photos before upload (the app uploads ~0.7 quality JPEGs).
+  async function toJpeg(file: File, max = 1800): Promise<Blob> {
+    const img = await createImageBitmap(file);
+    const scale = Math.min(1, max / Math.max(img.width, img.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error('Could not read image'))), 'image/jpeg', 0.82));
+  }
+  const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'place';
+
+  // ---------- State ----------
+  let sb: SupabaseClient;
+  let env: Env = 'prod';
+  let places: (Place & { kind: Kind })[] = [];
+  let kindFilter: 'all' | Kind = 'all';
+  let editing: { kind: Kind; original: string | null; values: Record<string, any>; gallery: any[] } | null = null;
+  let dirty = false;
+
+  const listView = $<HTMLElement>('[data-list-view]');
+  const editor = $<HTMLFormElement>('[data-editor]');
+  const fieldsBox = $<HTMLElement>('[data-fields]');
+  const searchInput = $<HTMLInputElement>('[data-search]');
+
+  // ---------- List ----------
+  async function loadPlaces() {
+    const [dz, tu] = await Promise.all([
+      sb.from('dropzones').select('*').order('name'),
+      sb.from('tunnels').select('*').order('name'),
+    ]);
+    if (dz.error || tu.error) return showError((dz.error || tu.error)!.message);
+    places = [
+      ...(dz.data ?? []).map((p: Place) => ({ ...p, kind: 'dz' as Kind })),
+      ...(tu.data ?? []).map((p: Place) => ({ ...p, kind: 'tunnel' as Kind })),
+    ].sort((a, b) => a.name.localeCompare(b.name));
+    renderList();
+  }
+
+  function renderList() {
+    const q = searchInput.value.trim().toLowerCase();
+    const shown = places.filter((p) =>
+      (kindFilter === 'all' || p.kind === kindFilter) &&
+      (!q || [p.name, p.country, p.location, p.address].some((x) => x?.toLowerCase().includes(q))));
+    $<HTMLElement>('[data-list-count]').textContent =
+      `${shown.length} of ${places.length} places · ${places.filter((p) => p.kind === 'dz').length} dropzones, ${places.filter((p) => p.kind === 'tunnel').length} tunnels`;
+    $<HTMLElement>('[data-places]').replaceChildren(...shown.map((p) => {
+      const missing = p.kind === 'dz'
+        ? ['altitude_ft', 'aircraft', 'hours', 'website'].filter((k) => !p[k])
+        : ['hours', 'website', 'price_no_coach_regular'].filter((k) => !p[k]);
+      const sub = p.kind === 'dz'
+        ? [p.country, p.altitude_ft && `${Number(p.altitude_ft).toLocaleString('de-CH')} ft`, p.aircraft].filter(Boolean).join(' · ')
+        : [p.location, p.diameter].filter(Boolean).join(' · ');
+      return el('button', { type: 'button', class: 'place-row', onclick: () => openEditor(p.kind, p) },
+        p.avatar_path
+          ? el('img', { class: 'place-avatar', src: photoUrl(env, p.avatar_path), alt: '', loading: 'lazy' })
+          : el('span', { class: `place-avatar${p.kind === 'tunnel' ? ' tunnel' : ''}`, textContent: p.kind === 'dz' ? 'DZ' : 'T' }),
+        el('span', {},
+          el('strong', { textContent: p.name }),
+          el('small', { textContent: sub || (p.kind === 'dz' ? 'Dropzone' : 'Tunnel') }),
+          missing.length > 0 && el('small', { class: 'missing', textContent: `Missing: ${missing.map((m) => m.replace(/_/g, ' ')).join(', ')}` }),
+        ),
+      );
+    }));
+  }
+
+  searchInput.addEventListener('input', renderList);
+  $$<HTMLButtonElement>('[data-kind-filter]').forEach((b) => b.addEventListener('click', () => {
+    kindFilter = b.dataset.kindFilter as typeof kindFilter;
+    $$<HTMLButtonElement>('[data-kind-filter]').forEach((x) => x.setAttribute('aria-selected', String(x === b)));
+    renderList();
+  }));
+  $$<HTMLButtonElement>('[data-new]').forEach((b) => b.addEventListener('click', () => openEditor(b.dataset.new as Kind, null)));
+
+  // ---------- Editor ----------
+  async function openEditor(kind: Kind, place: Place | null) {
+    const values: Record<string, any> = place ? { ...place } : {};
+    editing = { kind, original: place?.name ?? null, values, gallery: [] };
+    dirty = false;
+    if (place) {
+      const { data } = await sb.from(kind === 'dz' ? 'dz_photos' : 'tunnel_photos')
+        .select('*').eq(kind === 'dz' ? 'dz_name' : 'tunnel_name', place.name).eq('status', 'approved').order('created_at');
+      editing.gallery = data ?? [];
+    }
+    const tag = $<HTMLElement>('[data-editor-kind]');
+    tag.textContent = place ? (kind === 'dz' ? 'Dropzone' : 'Tunnel') : (kind === 'dz' ? 'New dropzone' : 'New tunnel');
+    tag.classList.toggle('tunnel', kind === 'tunnel');
+    $<HTMLElement>('[data-editor-title]').textContent = place?.name ?? (kind === 'dz' ? 'New dropzone' : 'New tunnel');
+    $<HTMLElement>('[data-save-hint]').textContent = place ? '' : 'Name, location and coordinates are required.';
+    renderEditor();
+    listView.hidden = true;
+    editor.hidden = false;
+    window.scrollTo({ top: 0 });
+  }
+
+  function closeEditor() {
+    if (dirty && !confirm('Discard your changes?')) return;
+    editing = null;
+    editor.hidden = true;
+    listView.hidden = false;
+  }
+  $<HTMLButtonElement>('[data-back]').addEventListener('click', closeEditor);
+  $<HTMLButtonElement>('[data-cancel]').addEventListener('click', closeEditor);
+  editor.addEventListener('input', () => { dirty = true; });
+
+  const setVal = (key: string, v: any) => { editing!.values[key] = v; dirty = true; };
+
+  function renderEditor() {
+    const { kind } = editing!;
+    const sections = kind === 'dz' ? DZ_SECTIONS : TUNNEL_SECTIONS;
+    fieldsBox.replaceChildren(...sections.map((sec) => {
+      const card = el('section', { class: `fcard${sec.wide ? ' wide' : ''}` }, el('h3', { textContent: sec.title }));
+      for (const f of sec.fields) {
+        add(card, fieldEl(f));
+        if (f.key === 'name' || f.key === 'location' || f.key === 'country') { /* coords go after basics fields */ }
+      }
+      if (sec.extra === 'coords') add(card, coordsEl());
+      if (sec.extra === 'webcams') add(card, webcamsEl());
+      if (sec.extra === 'media') add(card, mediaEl());
+      return card;
+    }));
+  }
+
+  function fieldEl(f: Field): HTMLElement {
+    const v = editing!.values[f.key];
+    const wrap = (control: Node) => el('label', { class: 'field' },
+      el('span', {}, f.label, f.hint ? el('em', { textContent: ` · ${f.hint}` }) : null), control);
+
+    if (f.type === 'text' || f.type === 'number') {
+      const readonly = f.key === 'name' && editing!.original !== null;
+      const input = el('input', {
+        type: f.type === 'number' ? 'number' : 'text', value: v ?? '', placeholder: f.placeholder ?? '', readOnly: readonly,
+        title: readonly ? 'The name identifies the place and can’t be changed here.' : undefined,
+        oninput: (e: Event) => {
+          const raw = (e.target as HTMLInputElement).value;
+          setVal(f.key, f.type === 'number' ? (raw === '' ? null : Math.round(Number(raw))) : raw);
+          if (f.key === 'name' && !editing!.original) $<HTMLElement>('[data-editor-title]').textContent = raw || 'New place';
+        },
+      });
+      return wrap(input);
+    }
+    if (f.type === 'textarea') {
+      return wrap(el('textarea', { value: v ?? '', placeholder: f.placeholder ?? '', rows: 5, oninput: (e: Event) => setVal(f.key, (e.target as HTMLTextAreaElement).value) }));
+    }
+    if (f.type === 'select') {
+      const sel = el('select', { onchange: (e: Event) => setVal(f.key, (e.target as HTMLSelectElement).value || null) },
+        ...f.options!.map(([val, label]) => el('option', { value: val, textContent: label, selected: (v ?? '') === val })));
+      return wrap(sel);
+    }
+    if (f.type === 'hours') return hoursEl(f);
+    return chipsEl(f);
+  }
+
+  function chipsEl(f: Field): HTMLElement {
+    // chipsText = stored as one comma-separated text (aircraft), chips = text[]
+    const read = (): string[] => {
+      const v = editing!.values[f.key];
+      if (Array.isArray(v)) return v;
+      return typeof v === 'string' && v.trim() ? v.split(/\s*[,;\n]\s*/).filter(Boolean) : [];
+    };
+    const write = (list: string[]) => setVal(f.key, f.type === 'chipsText' ? (list.join(', ') || null) : list);
+    const box = el('div', { class: 'field' }, el('span', { textContent: f.label }));
+    const chips = el('div', { class: 'chips' });
+    const sugg = el('div', { class: 'chips' });
+    const input = el('input', { type: 'text', placeholder: f.placeholder ?? 'Type and press Enter' });
+    const paint = () => {
+      const list = read();
+      chips.replaceChildren(...list.map((item, i) => el('span', { class: 'chip' }, item,
+        el('button', { type: 'button', 'aria-label': `Remove ${item}`, textContent: '✕', onclick: () => { write(list.filter((_, j) => j !== i)); paint(); } }))));
+      sugg.replaceChildren(...(f.suggest ?? []).filter((s) => !list.includes(s)).map((s) =>
+        el('button', { type: 'button', class: 'chip-suggest', textContent: `+ ${s}`, onclick: () => { write([...read(), s]); paint(); } })));
+    };
+    const commit = () => {
+      const parts = input.value.split(',').map((s) => s.trim()).filter(Boolean);
+      if (!parts.length) return;
+      write([...read(), ...parts.filter((p) => !read().includes(p))]);
+      input.value = '';
+      paint();
+    };
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
+    input.addEventListener('blur', commit);
+    paint();
+    add(box, chips, input, (f.suggest?.length ?? 0) > 0 && sugg);
+    return box;
+  }
+
+  function hoursEl(f: Field): HTMLElement {
+    const days = parseHours(editing!.values[f.key]);
+    const save = () => setVal(f.key, serializeHours(days) || null);
+    const inputs = WEEKDAYS.map((d, i) => el('input', {
+      type: 'text', value: days[i], placeholder: 'Closed',
+      oninput: (e: Event) => { days[i] = (e.target as HTMLInputElement).value; save(); },
+    }));
+    const all = el('input', { type: 'text', placeholder: 'e.g. 09:00–sunset' });
+    const applyAll = () => {
+      days.fill(all.value.trim());
+      inputs.forEach((inp) => (inp.value = all.value.trim()));
+      save();
+    };
+    return el('div', { class: 'field' },
+      el('span', {}, f.label, el('em', { textContent: ' · empty = closed' })),
+      el('div', { class: 'inline' }, all, el('button', { type: 'button', textContent: 'Set every day', onclick: applyAll })),
+      el('div', { class: 'hours' }, ...WEEKDAYS.map((d, i) => el('label', {}, d, inputs[i]))),
+    );
+  }
+
+  function coordsEl(): HTMLElement {
+    const vals = editing!.values;
+    const lat = el('input', { type: 'number', step: 'any', value: vals.lat ?? '', placeholder: '47.3847', oninput: (e: Event) => { setVal('lat', num((e.target as HTMLInputElement).value)); paintLink(); } });
+    const lng = el('input', { type: 'number', step: 'any', value: vals.lng ?? '', placeholder: '9.6997', oninput: (e: Event) => { setVal('lng', num((e.target as HTMLInputElement).value)); paintLink(); } });
+    const paste = el('input', { type: 'text', placeholder: 'Paste “47.38, 9.69” or a Google Maps link' });
+    const link = el('p', { class: 'hint' });
+    const paintLink = () => {
+      link.replaceChildren(vals.lat != null && vals.lng != null
+        ? el('a', { href: `https://www.google.com/maps?q=${vals.lat},${vals.lng}`, target: '_blank', rel: 'noopener', textContent: 'Check the pin on Google Maps ↗' })
+        : 'Right-click the spot in Google Maps and click the coordinates to copy them.');
+    };
+    paste.addEventListener('input', () => {
+      const c = parseCoords(paste.value);
+      if (!c) return;
+      lat.value = String(c[0]); lng.value = String(c[1]);
+      setVal('lat', c[0]); setVal('lng', c[1]);
+      paste.value = '';
+      paintLink();
+      toast('📍 Coordinates set');
+    });
+    paintLink();
+    return el('div', { class: 'field' },
+      el('span', { textContent: 'Coordinates' }),
+      paste,
+      el('div', { class: 'row2' }, el('label', { class: 'field' }, el('span', { textContent: 'Latitude' }), lat), el('label', { class: 'field' }, el('span', { textContent: 'Longitude' }), lng)),
+      link,
+    );
+  }
+  const num = (raw: string) => (raw === '' || isNaN(Number(raw)) ? null : Number(raw));
+
+  function webcamsEl(): HTMLElement {
+    const box = el('div', { class: 'field' });
+    const list = el('div', { class: 'cams' });
+    const input = el('input', { type: 'url', placeholder: 'https://… webcam image or page' });
+    const read = (): string[] => editing!.values.webcams ?? [];
+    const paint = () => list.replaceChildren(...read().map((url, i) => {
+      const isImg = /\.(jpe?g|png|webp|gif)(\?|$)/i.test(url);
+      return el('div', { class: 'cam' },
+        isImg ? el('img', { src: url, alt: '', loading: 'lazy' }) : el('span', { class: 'noimg', textContent: 'Web page' }),
+        el('a', { href: url, target: '_blank', rel: 'noopener', textContent: url }),
+        el('button', { type: 'button', class: 'mini-btn', textContent: 'Remove', onclick: () => { setVal('webcams', read().filter((_, j) => j !== i)); paint(); } }),
+      );
+    }));
+    const commit = () => {
+      const url = input.value.trim();
+      if (!url) return;
+      if (!/^https?:\/\//i.test(url)) { toast('Webcam links need to start with http(s)://'); return; }
+      setVal('webcams', [...read(), url]);
+      input.value = '';
+      paint();
+    };
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
+    paint();
+    add(box,
+      el('span', {}, 'Webcams nearby', el('em', { textContent: ' · direct image links show a preview' })),
+      list,
+      el('div', { class: 'inline' }, input, el('button', { type: 'button', textContent: 'Add', onclick: commit })),
+    );
+    return box;
+  }
+
+  async function uploadImage(file: File, folder: string): Promise<string> {
+    const { data: u } = await sb.auth.getUser();
+    const blob = await toJpeg(file);
+    const path = `${u.user?.id}/admin/${folder}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.jpg`;
+    const { error } = await sb.storage.from(BUCKET).upload(path, blob, { contentType: 'image/jpeg' });
+    if (error) throw error;
+    return path;
+  }
+
+  function mediaEl(): HTMLElement {
+    const { kind, values } = editing!;
+    const box = el('div', { class: 'field' });
+
+    // Profile photo → avatar_path, saved with the form.
+    const avatarImg = el('img', { class: 'avatar-preview', alt: '' });
+    const paintAvatar = () => {
+      avatarImg.hidden = !values.avatar_path;
+      if (values.avatar_path) avatarImg.src = photoUrl(env, values.avatar_path);
+    };
+    const avatarInput = el('input', { type: 'file', accept: 'image/*' });
+    avatarInput.addEventListener('change', async () => {
+      const file = avatarInput.files?.[0];
+      if (!file) return;
+      toast('Uploading…');
+      try {
+        setVal('avatar_path', await uploadImage(file, `${slug(values.name || 'place')}-avatar`));
+        paintAvatar();
+        toast('✓ Profile photo ready — save to apply');
+      } catch (e: any) { toast(`Upload failed: ${e.message}`); }
+      avatarInput.value = '';
+    });
+    paintAvatar();
+
+    // Gallery → approved photos, added right away (place must exist).
+    const gallery = el('div', { class: 'media' });
+    const paintGallery = () => gallery.replaceChildren(...editing!.gallery.map((p) => {
+      const src = photoUrl(env, p.photo_path);
+      return el('div', { class: 'media-item' },
+        el('img', { src, alt: '', loading: 'lazy', onclick: () => openLightbox(src) }),
+        el('button', { type: 'button', class: 'del', 'aria-label': 'Remove photo', textContent: '✕', onclick: async () => {
+          if (!confirm('Remove this photo from the gallery?')) return;
+          const { error } = await sb.rpc('admin_delete_location_photo', { p_kind: kind, p_id: p.id });
+          if (error) return toast(`Failed: ${error.message}`);
+          editing!.gallery = editing!.gallery.filter((x) => x.id !== p.id);
+          paintGallery();
+          toast('Photo removed');
+        } }),
+      );
+    }));
+    const galleryInput = el('input', { type: 'file', accept: 'image/*', multiple: true });
+    galleryInput.addEventListener('change', async () => {
+      const files = Array.from(galleryInput.files ?? []);
+      if (!files.length || !editing?.original) return;
+      toast(`Uploading ${files.length} photo${files.length > 1 ? 's' : ''}…`);
+      try {
+        const paths = await Promise.all(files.map((f) => uploadImage(f, slug(editing!.original!))));
+        const { error } = await sb.rpc('admin_add_location_photos', { p_kind: kind, p_name: editing.original, p_paths: paths });
+        if (error) throw error;
+        await reloadGallery();
+        toast(`✓ ${files.length} photo${files.length > 1 ? 's' : ''} added`);
+      } catch (e: any) { toast(`Upload failed: ${e.message}`); }
+      galleryInput.value = '';
+    });
+    paintGallery();
+
+    add(box,
+      el('span', { textContent: 'Profile photo' }),
+      el('div', { class: 'avatar-row' }, avatarImg, el('label', { class: 'upload', style: 'flex:1' }, values.avatar_path ? 'Replace profile photo' : 'Upload profile photo', avatarInput)),
+      el('span', { textContent: `Gallery${editing!.gallery.length ? ` · ${editing!.gallery.length}` : ''}`, style: 'margin-top:8px' }),
+      gallery,
+      editing!.original
+        ? el('label', { class: 'upload' }, '+ Add photos (several at once)', galleryInput)
+        : el('p', { class: 'hint', textContent: 'Save the place first, then add gallery photos.' }),
+    );
+    return box;
+  }
+
+  async function reloadGallery() {
+    if (!editing?.original) return;
+    const { kind, original } = editing;
+    const { data } = await sb.from(kind === 'dz' ? 'dz_photos' : 'tunnel_photos')
+      .select('*').eq(kind === 'dz' ? 'dz_name' : 'tunnel_name', original).eq('status', 'approved').order('created_at');
+    editing.gallery = data ?? [];
+    renderEditor();
+  }
+
+  // ---------- Save ----------
+  editor.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!editing) return;
+    const { kind, original, values } = editing;
+    const sections = kind === 'dz' ? DZ_SECTIONS : TUNNEL_SECTIONS;
+    const payload: Record<string, any> = {};
+    for (const f of sections.flatMap((s) => s.fields)) {
+      let v = values[f.key];
+      if (typeof v === 'string') v = v.trim() || null;
+      payload[f.key] = v ?? (f.type === 'chips' ? [] : null);
+    }
+    payload.lat = values.lat ?? null;
+    payload.lng = values.lng ?? null;
+    if (kind === 'dz') payload.webcams = values.webcams ?? [];
+    payload.avatar_path = values.avatar_path ?? null;
+
+    const need = kind === 'dz' ? ['name', 'country', 'lat', 'lng'] : ['name', 'location', 'lat', 'lng'];
+    const missing = need.filter((k) => payload[k] == null || payload[k] === '');
+    if (missing.length) { toast(`Missing: ${missing.join(', ')}`); return; }
+
+    const btn = $<HTMLButtonElement>('[data-save]');
+    btn.disabled = true;
+    const { data, error } = await sb.rpc('admin_save_location', { p_kind: kind, p_original_name: original, p_data: payload });
+    btn.disabled = false;
+    if (error) {
+      toast(error.message.includes('duplicate key') ? `“${payload.name}” already exists` : `Save failed: ${error.message}`);
+      return;
+    }
+    dirty = false;
+    toast(`✓ Saved · ${data}`);
+    await loadPlaces();
+    if (!original) {
+      // Reopen as an existing place so gallery uploads are available.
+      const saved = places.find((p) => p.kind === kind && p.name === data);
+      if (saved) openEditor(kind, saved);
+    }
+  });
+
+  window.addEventListener('beforeunload', (e) => { if (dirty) e.preventDefault(); });
+
+  // ---------- Demo (dev server + ?demo) ----------
+  function demoClient(): SupabaseClient {
+    const rows: Record<string, any[]> = {
+      dropzones: [
+        { name: 'Skydive Hohenems', country: 'Austria', lat: 47.3847, lng: 9.6997, altitude_ft: 13500, aircraft: '1× Cessna 208', hours: '9:00 am – sunset', website: 'skydivehohenems.at', facilities: ['Showers', 'WiFi'], stay: ['Camper-friendly'], webcams: ['https://www.foto-webcam.eu/webcam/dornbirn/current/400.jpg'], foehn_region: 'north', foehn_region_label: 'Alpennordseite · Rheintal', avatar_path: '/img/landing/map.jpg', description: 'Alpine backdrop.' },
+        { name: 'Skydive Algarve', country: 'Portugal', lat: 37.13, lng: -8.62, facilities: [], stay: [], webcams: [] },
+      ],
+      tunnels: [{ name: 'Windwerk Winterthur', location: 'Winterthur, Switzerland', lat: 47.5, lng: 8.72, diameter: '4.3 m', hours: 'Tue–Fri 12:00–21:00 · Sat–Sun 10:00–20:00', currency: 'CHF', price_no_coach_regular: 900, facilities: ['Lockers'] }],
+      dz_photos: [{ id: 'p1', dz_name: 'Skydive Hohenems', photo_path: '/img/landing/feed.jpg', status: 'approved' }],
+      tunnel_photos: [],
+    };
+    const query = (table: string) => {
+      const filters: [string, any][] = [];
+      const api: any = {
+        select: () => api, order: () => api,
+        eq: (k: string, v: any) => { filters.push([k, v]); return api; },
+        then: (res: any) => res({ data: rows[table].filter((r) => filters.every(([k, v]) => r[k] === v)), error: null }),
+      };
+      return api;
+    };
+    return { from: query, rpc: async (fn: string, args: any) => ({ data: fn === 'admin_save_location' ? (args.p_original_name ?? args.p_data.name) : null, error: null }), auth: { getUser: async () => ({ data: { user: { id: 'demo' } } }) }, storage: { from: () => ({ upload: async () => ({ error: null }) }) } } as any;
+  }
+
+  initAdmin(async (client, e) => {
+    sb = client; env = e;
+    if (editing && !confirm('Reload and discard your changes?')) return;
+    editing = null; dirty = false;
+    editor.hidden = true; listView.hidden = false;
+    await loadPlaces();
+    // Dev preview of the editor: /admin/places?demo&edit (or &new).
+    if (import.meta.env.DEV && location.search.includes('demo')) {
+      if (location.search.includes('edit')) openEditor('dz', places.find((p) => p.kind === 'dz' && p.avatar_path)!);
+      else if (location.search.includes('new')) openEditor('tunnel', null);
+    }
+  }, demoClient);
+</script>
