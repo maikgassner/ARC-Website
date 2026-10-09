@@ -3,8 +3,8 @@ import '../styles/global.css';
 import Canopy from '../components/Canopy.astro';
 import { SITE } from '../data/site';
 
-interface Props { title?: string; description?: string }
-const { title, description = SITE.description } = Astro.props;
+interface Props { title?: string; description?: string; noindex?: boolean }
+const { title, description = SITE.description, noindex = false } = Astro.props;
 const fullTitle = title ? `${title} · Arc` : `Arc — ${SITE.tagline}`;
 const year = new Date().getFullYear();
 const canonical = new URL(Astro.url.pathname, Astro.site);
@@ -16,6 +16,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
     <meta property="og:title" content={fullTitle} />
     <meta property="og:description" content={description} />
     <link rel="canonical" href={canonical} />
