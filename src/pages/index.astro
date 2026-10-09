@@ -10,10 +10,32 @@ const year = new Date().getFullYear();
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Arc — Your digital skydive logbook</title>
-  <meta name="description" content="The logbook and skydiving network you've been waiting for. Log every jump in seconds, watch your skills grow and connect with jumpers at every dropzone.">
-  <meta property="og:title" content="Arc — Your digital skydive logbook">
-  <meta property="og:description" content="The logbook and skydiving network you've been waiting for.">
+  <title>Arc — Digital Skydiving Logbook App for Skydivers</title>
+  <meta name="description" content="Arc is the digital skydiving logbook for iPhone: log skydives and tunnel time, get jumps signed, scan your paper logbook with AI and check dropzone weather.">
+  <!-- Ignored by Google, still read by some other search engines. -->
+  <meta name="keywords" content="skydiving, skydiving logbook, skydive logbook, digital logbook, digital skydiving logbook, skydiving app, skydive app, logbook app, jump log, jump logbook, parachuting logbook, skydiver, skydiving community, dropzone, dropzone weather, winds aloft, wind tunnel, indoor skydiving, tunnel logbook, bodyflight, freefly, wingsuit, canopy, jump signature, AFF, skydiving license, TestFlight beta">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Arc">
+  <meta property="og:title" content="Arc — Digital Skydiving Logbook App">
+  <meta property="og:description" content="Log every jump in seconds, get it signed by licensed skydivers, scan old logbooks with AI and check the weather at your dropzone.">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Arc — Digital Skydiving Logbook App">
+  <meta name="twitter:description" content="Log every jump in seconds, get it signed by licensed skydivers, scan old logbooks with AI and check the weather at your dropzone.">
+  <meta name="twitter:image" content="https://www.logwitharc.app/img/arc-icon-512.png">
+  <!-- Structured data: tells search engines this page is about an iOS app. -->
+  <script type="application/ld+json" set:html={JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'MobileApplication',
+    name: 'Arc',
+    alternateName: 'Arc Skydiving Logbook',
+    description: 'Digital skydiving logbook and skydiver network: log skydives and wind tunnel sessions, get jumps signed, scan paper logbooks with AI, track your skills and check dropzone weather.',
+    applicationCategory: 'SportsApplication',
+    operatingSystem: 'iOS',
+    url: 'https://www.logwitharc.app/',
+    image: 'https://www.logwitharc.app/img/arc-icon-512.png',
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'CHF' },
+    keywords: 'skydiving logbook, digital logbook, skydive app, dropzone weather, wind tunnel logbook',
+  })} />
   <link rel="canonical" href="https://www.logwitharc.app/">
   <meta property="og:url" content="https://www.logwitharc.app/">
   <meta property="og:image" content="https://www.logwitharc.app/img/arc-icon-512.png">
