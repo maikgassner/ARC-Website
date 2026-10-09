@@ -305,12 +305,20 @@ h1, h2, h3, p { margin: 0; }
 }
 .feature {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  grid-template-columns: 1fr;
   gap: clamp(32px, 6vw, 96px);
   align-items: center;
 }
 .feature-text { max-width: 460px; }
-.feature-text.end { justify-self: end; }
+/* Desktop: two columns, alternating sides (source order). Below that the
+   text always comes first — title, copy, then the screenshot. */
+@media (min-width: 860px) {
+  .feature { grid-template-columns: 1fr 1fr; }
+  .feature-text.end { justify-self: end; }
+}
+@media (max-width: 859px) {
+  .feature-text { order: -1; max-width: 560px; }
+}
 .feature h3 {
   font-weight: 800;
   font-size: clamp(30px, 3.4vw, 44px);
