@@ -32,7 +32,7 @@ import Base from '../layouts/Base.astro';
         <svg viewBox="0 0 60.06 60.06" width="44" height="44" aria-hidden="true"><defs><linearGradient id="lg" x1="30" y1="63" x2="30" y2="-70" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8f0000"/><stop offset=".63" stop-color="#ffa54e"/></linearGradient></defs><rect width="60.06" height="60.06" rx="13" fill="url(#lg)"/><path d="M51.4,42.07c-2.88-.14-8.31-12.01-21.36-12.01-13.85,0-19.6,12.22-21.21,12.22-4.81,0,8.18-24.5,21.31-24.5s25.48,24.5,21.26,24.29Z" fill="#fff"/></svg>
       </div>
       <h2>Admin sign-in</h2>
-      <p>Use your Arc account (email + password).</p>
+      <p>Use your Arc account.</p>
       <input name="email" type="email" placeholder="Email" required autocomplete="username">
       <input name="password" type="password" placeholder="Password" required autocomplete="current-password">
       <button type="submit" class="primary-btn">Sign in</button>
@@ -73,7 +73,7 @@ import Base from '../layouts/Base.astro';
       <div class="all-clear" data-allclear hidden>
         <div class="all-clear-icon">✓</div>
         <h2>All clear</h2>
-        <p>Nothing waiting for approval. Go jump.</p>
+        <p data-allclear-text>Nothing waiting for approval. Go jump.</p>
       </div>
     </div>
   </div>
@@ -402,15 +402,24 @@ import Base from '../layouts/Base.astro';
     applyFilter();
   }
 
+  const CLEAR_TEXT: Record<'all' | List, string> = {
+    all: 'Nothing waiting for approval. Go jump.',
+    photos: 'No photos waiting for approval. Go jump.',
+    creates: 'No new dropzones or tunnels to review. Go jump.',
+    edits: 'No edit suggestions to review. Go jump.',
+  };
+
   function applyFilter() {
-    const total = counts.photos + counts.creates + counts.edits;
+    const shown = filter === 'all' ? counts.photos + counts.creates + counts.edits : counts[filter];
     $$<HTMLElement>('[data-filter]').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.filter === filter)));
+    // Empty sections are always hidden; when the current view is empty, the
+    // same "All clear" screen shows for every filter.
     $$<HTMLElement>('[data-section]').forEach((s) => {
       const list = s.dataset.section as List;
-      // "All" hides empty sections so the page isn't three "nothing here"s.
-      s.hidden = filter === 'all' ? counts[list] === 0 : filter !== list;
+      s.hidden = counts[list] === 0 || (filter !== 'all' && filter !== list);
     });
-    allClear.hidden = !(filter === 'all' && total === 0);
+    $<HTMLElement>('[data-allclear-text]').textContent = CLEAR_TEXT[filter];
+    allClear.hidden = shown > 0;
   }
   $$<HTMLButtonElement>('[data-filter]').forEach((t) =>
     t.addEventListener('click', () => { filter = t.dataset.filter as typeof filter; applyFilter(); }));
