@@ -8,7 +8,7 @@ const { title, sections } = Astro.props;
 <Base title={title}>
   <article class="wrap narrow legal">
     <h1>{title}</h1>
-    <p class="draft" role="note">Draft — not yet reviewed by a lawyer. Content may change.</p>
+    <p class="draft" role="note">Draft — work in progress. Content may change.</p>
     <p class="updated">{UPDATED}</p>
     {sections.map(sec => (
       <section>
