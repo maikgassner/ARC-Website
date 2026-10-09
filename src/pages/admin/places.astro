@@ -17,8 +17,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
         <button type="button" data-kind-filter="tunnel" aria-selected="false">Tunnels</button>
       </div>
       <div class="new-btns">
-        <button type="button" class="primary-btn small" data-new="dz">+ New dropzone</button>
-        <button type="button" class="dark-btn small" data-new="tunnel">+ New tunnel</button>
+        <button type="button" class="primary-btn small" data-new>+ Add new</button>
       </div>
     </div>
     <p class="list-count" data-list-count></p>
@@ -32,6 +31,10 @@ import AdminShell from '../../layouts/AdminShell.astro';
       <div>
         <span class="kind-tag" data-editor-kind></span>
         <h2 data-editor-title></h2>
+      </div>
+      <div class="kind-toggle" role="radiogroup" aria-label="Type" data-kind-toggle hidden>
+        <button type="button" role="radio" data-kind="dz">Dropzone</button>
+        <button type="button" role="radio" data-kind="tunnel">Wind tunnel</button>
       </div>
     </div>
     <div class="editor-grid" data-fields></div>
@@ -146,7 +149,53 @@ import AdminShell from '../../layouts/AdminShell.astro';
     backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(41, 43, 44, .14);
   }
   .savebar-hint { margin-right: auto; padding-left: 10px; font-size: .88rem; color: var(--fg-3); }
+
+  /* ---------- Kind toggle (new places) ---------- */
+  .kind-toggle { display: flex; gap: 4px; padding: 4px; border-radius: 999px; background: var(--ink-100); margin-left: auto; }
+  .kind-toggle button {
+    border: 0; cursor: pointer; font: 700 .95rem var(--font); padding: 10px 18px; border-radius: 999px;
+    background: transparent; color: var(--fg-3); transition: background .15s, color .15s;
+  }
+  .kind-toggle button[aria-checked="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 3px rgba(41, 43, 44, .12); }
+
+  /* ---------- Validation ---------- */
+  :global(.field.invalid input), :global(.field.invalid textarea), :global(.field.invalid select), :global(.field.invalid .upload) {
+    border-color: var(--no) !important; box-shadow: 0 0 0 3px rgba(198, 78, 44, .14);
+  }
+  :global(.field.invalid > span) { color: var(--no); }
+  :global(.err) { margin: 0; font-size: .82rem; font-weight: 700; color: var(--no); }
+
+  /* ---------- Address autocomplete ---------- */
+  :global(.ac) { position: relative; }
+  :global(.ac-list) {
+    position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 20; margin: 0; padding: 6px; list-style: none;
+    background: var(--surface); border-radius: 14px; box-shadow: 0 16px 40px rgba(41, 43, 44, .18); max-height: 320px; overflow: auto;
+  }
+  :global(.ac-list li) { padding: 10px 12px; border-radius: 10px; cursor: pointer; display: grid; gap: 2px; }
+  :global(.ac-list li[aria-selected="true"]), :global(.ac-list li:hover) { background: var(--bg); }
+  :global(.ac-list strong) { font-size: .95rem; }
+  :global(.ac-list small) { font-size: .8rem; color: var(--fg-3); }
+  :global(.pin) { display: flex; gap: 8px; align-items: center; font-size: .85rem; color: var(--fg-2); margin: 0; }
+  :global(.pin.none) { color: var(--fg-3); }
+  :global(.pin a) { color: var(--accent-text); font-weight: 600; }
+
+  /* ---------- Profile photo card ---------- */
+  :global(.profile-card) { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; }
+  :global(.profile-card .avatar-preview) { width: 112px; height: 112px; border-radius: 26px; }
+  :global(.avatar-empty) { width: 112px; height: 112px; border-radius: 26px; display: grid; place-items: center; background: var(--ink-100); color: var(--fg-3); font-size: .78rem; font-weight: 700; text-align: center; padding: 8px; }
+  :global(.profile-actions) { display: flex; gap: 8px; flex-wrap: wrap; }
+  :global(.profile-actions .upload) { min-height: 0; padding: 10px 16px; border-radius: 999px; }
+  :global(.media-item.pending img) { opacity: .75; }
+  :global(.media-item .badge) {
+    position: absolute; left: 6px; bottom: 6px; font-size: .68rem; font-weight: 800; letter-spacing: .04em;
+    padding: 3px 8px; border-radius: 999px; background: rgba(0, 0, 0, .6); color: #fff;
+  }
+  :global(.upload.drag) { border-color: var(--coral-500); color: var(--fg); background: var(--coral-50); }
+
   @media (max-width: 640px) {
+    .kind-toggle { margin-left: 0; width: 100%; }
+    .kind-toggle button { flex: 1; }
+    :global(.profile-card) { grid-template-columns: 1fr; justify-items: start; }
     .new-btns { margin-left: 0; width: 100%; }
     .new-btns button { flex: 1; }
     :global(.row2) { grid-template-columns: 1fr; }
@@ -160,9 +209,9 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
   type Kind = 'dz' | 'tunnel';
   type Place = Record<string, any> & { name: string };
-  type FieldType = 'text' | 'number' | 'textarea' | 'chips' | 'chipsText' | 'hours' | 'select';
+  type FieldType = 'text' | 'number' | 'textarea' | 'chips' | 'chipsText' | 'hours' | 'select' | 'address';
   type Field = { key: string; label: string; type: FieldType; placeholder?: string; hint?: string; suggest?: string[]; options?: [string, string][] };
-  type Section = { title: string; wide?: boolean; fields: Field[]; extra?: 'coords' | 'webcams' | 'media' };
+  type Section = { title: string; wide?: boolean; fields: Field[]; extra?: 'webcams' | 'profile' | 'gallery' };
 
   const $ = <T extends Element>(sel: string) => document.querySelector(sel) as T;
   const $$ = <T extends Element>(sel: string) => Array.from(document.querySelectorAll(sel)) as T[];
@@ -172,14 +221,18 @@ import AdminShell from '../../layouts/AdminShell.astro';
   const STAY = ['Camper-friendly', 'Tent-friendly', 'On-site rooms', 'Bunkhouse', 'Hotels nearby'];
   const TUNNEL_FACILITIES = ['Showers', 'Café & bar', 'Gear rental', 'Lockers', 'Free parking', 'Video service', 'Shop', 'Kids area', 'WiFi'];
 
+  const PROFILE: Section = { title: 'Profile photo', wide: true, extra: 'profile', fields: [] };
+  const GALLERY: Section = { title: 'Gallery', wide: true, extra: 'gallery', fields: [] };
+
   const DZ_SECTIONS: Section[] = [
-    { title: 'Basics', extra: 'coords', fields: [
+    PROFILE,
+    { title: 'Basics', fields: [
       { key: 'name', label: 'Name', type: 'text', placeholder: 'Skydive Example' },
-      { key: 'country', label: 'Country', type: 'text', placeholder: 'Switzerland' },
-      { key: 'address', label: 'Address', type: 'text', placeholder: 'Airfield, 8320 Town' },
+      { key: 'address', label: 'Address', type: 'address', placeholder: 'Start typing the airfield or address…' },
+      { key: 'country', label: 'Country', type: 'text', placeholder: 'Filled in from the address' },
     ] },
     { title: 'Jumping', fields: [
-      { key: 'altitude_ft', label: 'Exit altitude', type: 'number', placeholder: '13000', hint: 'In feet' },
+      { key: 'altitude_m', label: 'Exit altitude', type: 'number', placeholder: '4000', hint: 'In metres' },
       { key: 'aircraft', label: 'Aircraft', type: 'chipsText', placeholder: 'e.g. 2× Twin Otter — Enter to add', suggest: ['1× Cessna 208', '1× Pilatus Porter', '1× Twin Otter', '2× Twin Otter', '1× Cessna 182', '1× Skyvan', '1× Casa 212'] },
       { key: 'hours', label: 'Opening hours', type: 'hours' },
     ] },
@@ -199,13 +252,15 @@ import AdminShell from '../../layouts/AdminShell.astro';
       { key: 'stay', label: 'Stay options', type: 'chips', placeholder: 'Add an option — Enter', suggest: STAY },
     ] },
     { title: 'Webcams', extra: 'webcams', fields: [] },
-    { title: 'Photos', wide: true, extra: 'media', fields: [] },
+    GALLERY,
   ];
 
   const TUNNEL_SECTIONS: Section[] = [
-    { title: 'Basics', extra: 'coords', fields: [
+    PROFILE,
+    { title: 'Basics', fields: [
       { key: 'name', label: 'Name', type: 'text', placeholder: 'Windwerk Example' },
-      { key: 'location', label: 'Location', type: 'text', placeholder: 'Town, Country' },
+      { key: 'address', label: 'Address', type: 'address', placeholder: 'Start typing the tunnel’s address…' },
+      { key: 'location', label: 'Location', type: 'text', placeholder: 'Town, Country — filled in from the address' },
     ] },
     { title: 'Tunnel', fields: [
       { key: 'diameter', label: 'Diameter', type: 'text', placeholder: '4.3 m' },
@@ -231,8 +286,13 @@ import AdminShell from '../../layouts/AdminShell.astro';
     { title: 'Amenities', fields: [
       { key: 'facilities', label: 'Facilities', type: 'chips', placeholder: 'Add a facility — Enter', suggest: TUNNEL_FACILITIES },
     ] },
-    { title: 'Photos', wide: true, extra: 'media', fields: [] },
+    GALLERY,
   ];
+
+  // Fields that carry over when switching a *new* place between DZ and tunnel.
+  const SHARED_KEYS = ['name', 'address', 'lat', 'lng', 'hours', 'phone', 'website', 'description', 'facilities', 'avatar_path', '_country', '_city'];
+
+  const FT_PER_M = 1 / 0.3048;
 
   // ---------- Opening hours (port of ARC/utils/openingHours.ts) ----------
   const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -281,9 +341,27 @@ import AdminShell from '../../layouts/AdminShell.astro';
     return parts.join(' · ');
   }
 
-  // Accepts "47.3847, 9.6997" (Google Maps right-click → copy) or a Maps URL.
+  // ---------- Address search (Photon / OpenStreetMap — free, no key) ----------
+  type Geo = { lat: number; lng: number; p: Record<string, any> };
+  const cityOf = (p: Record<string, any>) => p.city ?? p.town ?? p.village ?? p.locality ?? p.district ?? p.county ?? '';
+  function formatAddress(p: Record<string, any>): string {
+    const street = [p.street, p.housenumber].filter(Boolean).join(' ');
+    const town = [p.postcode, cityOf(p)].filter(Boolean).join(' ');
+    return [p.name && p.name !== p.street ? p.name : '', street, town, p.country].filter(Boolean).join(', ');
+  }
+  const toGeo = (f: any): Geo => ({ lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], p: f.properties ?? {} });
+  async function searchAddress(q: string): Promise<Geo[]> {
+    const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=en`);
+    return res.ok ? ((await res.json()).features ?? []).map(toGeo) : [];
+  }
+  async function reverseGeocode(lat: number, lng: number): Promise<Geo | null> {
+    const res = await fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&lang=en`);
+    const f = res.ok ? (await res.json()).features?.[0] : null;
+    return f ? { lat, lng, p: f.properties ?? {} } : null;
+  }
+  // A pasted "47.38, 9.69" or Google Maps link also works in the address field.
   function parseCoords(text: string): [number, number] | null {
-    const pats = [/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/, /@(-?\d+\.\d+),\s*(-?\d+\.\d+)/, /[?&](?:q|ll|query)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/, /(-?\d{1,3}\.\d+)\s*[,;\s]\s*(-?\d{1,3}\.\d+)/];
+    const pats = [/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/, /@(-?\d+\.\d+),\s*(-?\d+\.\d+)/, /[?&](?:q|ll|query)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/, /^\s*(-?\d{1,3}\.\d+)\s*[,;\s]\s*(-?\d{1,3}\.\d+)\s*$/];
     for (const p of pats) {
       const m = text.match(p);
       if (m) { const lat = +m[1], lng = +m[2]; if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return [lat, lng]; }
@@ -308,13 +386,15 @@ import AdminShell from '../../layouts/AdminShell.astro';
   let env: Env = 'prod';
   let places: (Place & { kind: Kind })[] = [];
   let kindFilter: 'all' | Kind = 'all';
-  let editing: { kind: Kind; original: string | null; values: Record<string, any>; gallery: any[] } | null = null;
+  type Pending = { file: File; url: string };
+  let editing: { kind: Kind; original: string | null; values: Record<string, any>; gallery: any[]; pending: Pending[] } | null = null;
   let dirty = false;
 
   const listView = $<HTMLElement>('[data-list-view]');
   const editor = $<HTMLFormElement>('[data-editor]');
   const fieldsBox = $<HTMLElement>('[data-fields]');
   const searchInput = $<HTMLInputElement>('[data-search]');
+  const kindToggle = $<HTMLElement>('[data-kind-toggle]');
 
   // ---------- List ----------
   async function loadPlaces() {
@@ -363,31 +443,53 @@ import AdminShell from '../../layouts/AdminShell.astro';
     $$<HTMLButtonElement>('[data-kind-filter]').forEach((x) => x.setAttribute('aria-selected', String(x === b)));
     renderList();
   }));
-  $$<HTMLButtonElement>('[data-new]').forEach((b) => b.addEventListener('click', () => openEditor(b.dataset.new as Kind, null)));
+  $<HTMLButtonElement>('[data-new]').addEventListener('click', () => openEditor('dz', null));
 
   // ---------- Editor ----------
   async function openEditor(kind: Kind, place: Place | null) {
     const values: Record<string, any> = place ? { ...place } : {};
-    editing = { kind, original: place?.name ?? null, values, gallery: [] };
-    dirty = false;
-    if (place) {
-      const { data } = await sb.from(kind === 'dz' ? 'dz_photos' : 'tunnel_photos')
-        .select('*').eq(kind === 'dz' ? 'dz_name' : 'tunnel_name', place.name).eq('status', 'approved').order('created_at');
-      editing.gallery = data ?? [];
+    if (kind === 'dz' && values.altitude_ft != null) {
+      values.altitude_m = Math.round(values.altitude_ft * 0.3048);
+      values._alt_m0 = values.altitude_m; // unchanged metres → keep the exact feet value
     }
-    const tag = $<HTMLElement>('[data-editor-kind]');
-    tag.textContent = place ? (kind === 'dz' ? 'Dropzone' : 'Tunnel') : (kind === 'dz' ? 'New dropzone' : 'New tunnel');
-    tag.classList.toggle('tunnel', kind === 'tunnel');
-    $<HTMLElement>('[data-editor-title]').textContent = place?.name ?? (kind === 'dz' ? 'New dropzone' : 'New tunnel');
-    $<HTMLElement>('[data-save-hint]').textContent = place ? '' : 'Name, location and coordinates are required.';
+    editing = { kind, original: place?.name ?? null, values, gallery: [], pending: [] };
+    dirty = false;
+    if (place) await loadGallery();
+    paintHead();
     renderEditor();
     listView.hidden = true;
     editor.hidden = false;
     window.scrollTo({ top: 0 });
   }
 
+  function paintHead() {
+    const { kind, original, values } = editing!;
+    const tag = $<HTMLElement>('[data-editor-kind]');
+    tag.textContent = original ? (kind === 'dz' ? 'Dropzone' : 'Wind tunnel') : 'New place';
+    tag.classList.toggle('tunnel', kind === 'tunnel');
+    $<HTMLElement>('[data-editor-title]').textContent = original ?? (values.name?.trim() || (kind === 'dz' ? 'New dropzone' : 'New wind tunnel'));
+    kindToggle.hidden = !!original;
+    $$<HTMLButtonElement>('[data-kind]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.kind === kind)));
+    $<HTMLElement>('[data-save-hint]').textContent = original ? '' : 'Name and address are required.';
+  }
+
+  // Switching type on a new place keeps whatever both forms share.
+  $$<HTMLButtonElement>('[data-kind]').forEach((b) => b.addEventListener('click', () => {
+    if (!editing || editing.original || b.dataset.kind === editing.kind) return;
+    const kind = b.dataset.kind as Kind;
+    const v = editing.values;
+    const kept: Record<string, any> = {};
+    for (const k of SHARED_KEYS) if (v[k] !== undefined) kept[k] = v[k];
+    if (kind === 'dz' && v._country) kept.country = v._country;
+    if (kind === 'tunnel' && (v._city || v._country)) kept.location = [v._city, v._country].filter(Boolean).join(', ');
+    editing = { ...editing, kind, values: kept };
+    paintHead();
+    renderEditor();
+  }));
+
   function closeEditor() {
     if (dirty && !confirm('Discard your changes?')) return;
+    editing?.pending.forEach((p) => URL.revokeObjectURL(p.url));
     editing = null;
     editor.hidden = true;
     listView.hidden = false;
@@ -396,52 +498,136 @@ import AdminShell from '../../layouts/AdminShell.astro';
   $<HTMLButtonElement>('[data-cancel]').addEventListener('click', closeEditor);
   editor.addEventListener('input', () => { dirty = true; });
 
-  const setVal = (key: string, v: any) => { editing!.values[key] = v; dirty = true; };
+  const setVal = (key: string, v: any) => { editing!.values[key] = v; dirty = true; clearError(key); };
+  const sectionsOf = (kind: Kind) => (kind === 'dz' ? DZ_SECTIONS : TUNNEL_SECTIONS);
 
   function renderEditor() {
-    const { kind } = editing!;
-    const sections = kind === 'dz' ? DZ_SECTIONS : TUNNEL_SECTIONS;
-    fieldsBox.replaceChildren(...sections.map((sec) => {
+    fieldsBox.replaceChildren(...sectionsOf(editing!.kind).map((sec) => {
       const card = el('section', { class: `fcard${sec.wide ? ' wide' : ''}` }, el('h3', { textContent: sec.title }));
-      for (const f of sec.fields) {
-        add(card, fieldEl(f));
-        if (f.key === 'name' || f.key === 'location' || f.key === 'country') { /* coords go after basics fields */ }
-      }
-      if (sec.extra === 'coords') add(card, coordsEl());
+      for (const f of sec.fields) add(card, fieldEl(f));
+      if (sec.extra === 'profile') add(card, profileEl());
       if (sec.extra === 'webcams') add(card, webcamsEl());
-      if (sec.extra === 'media') add(card, mediaEl());
+      if (sec.extra === 'gallery') add(card, galleryEl());
       return card;
     }));
   }
 
+  // Every field sits in a [data-key] wrapper so errors can mark it.
+  function wrap(key: string, label: string, hint: string | undefined, ...controls: (Node | false | null | undefined)[]) {
+    return el('div', { class: 'field', 'data-key': key },
+      el('span', {}, label, hint ? el('em', { textContent: ` · ${hint}` }) : null),
+      ...controls,
+      el('p', { class: 'err', hidden: true }),
+    );
+  }
+
   function fieldEl(f: Field): HTMLElement {
     const v = editing!.values[f.key];
-    const wrap = (control: Node) => el('label', { class: 'field' },
-      el('span', {}, f.label, f.hint ? el('em', { textContent: ` · ${f.hint}` }) : null), control);
-
     if (f.type === 'text' || f.type === 'number') {
       const readonly = f.key === 'name' && editing!.original !== null;
       const input = el('input', {
         type: f.type === 'number' ? 'number' : 'text', value: v ?? '', placeholder: f.placeholder ?? '', readOnly: readonly,
+        min: f.type === 'number' ? '0' : undefined,
         title: readonly ? 'The name identifies the place and can’t be changed here.' : undefined,
         oninput: (e: Event) => {
           const raw = (e.target as HTMLInputElement).value;
           setVal(f.key, f.type === 'number' ? (raw === '' ? null : Math.round(Number(raw))) : raw);
-          if (f.key === 'name' && !editing!.original) $<HTMLElement>('[data-editor-title]').textContent = raw || 'New place';
+          if (f.key === 'name' && !editing!.original) paintHead();
         },
       });
-      return wrap(input);
+      return wrap(f.key, f.label, readonly ? 'can’t be renamed' : f.hint, input);
     }
     if (f.type === 'textarea') {
-      return wrap(el('textarea', { value: v ?? '', placeholder: f.placeholder ?? '', rows: 5, oninput: (e: Event) => setVal(f.key, (e.target as HTMLTextAreaElement).value) }));
+      return wrap(f.key, f.label, f.hint, el('textarea', { value: v ?? '', placeholder: f.placeholder ?? '', rows: 5, oninput: (e: Event) => setVal(f.key, (e.target as HTMLTextAreaElement).value) }));
     }
     if (f.type === 'select') {
-      const sel = el('select', { onchange: (e: Event) => setVal(f.key, (e.target as HTMLSelectElement).value || null) },
-        ...f.options!.map(([val, label]) => el('option', { value: val, textContent: label, selected: (v ?? '') === val })));
-      return wrap(sel);
+      return wrap(f.key, f.label, f.hint, el('select', { onchange: (e: Event) => setVal(f.key, (e.target as HTMLSelectElement).value || null) },
+        ...f.options!.map(([val, label]) => el('option', { value: val, textContent: label, selected: (v ?? '') === val }))));
     }
+    if (f.type === 'address') return addressEl(f);
     if (f.type === 'hours') return hoursEl(f);
     return chipsEl(f);
+  }
+
+  function addressEl(f: Field): HTMLElement {
+    const vals = editing!.values;
+    const input = el('input', { type: 'text', value: vals.address ?? '', placeholder: f.placeholder, autocomplete: 'off', role: 'combobox', 'aria-autocomplete': 'list' });
+    const list = el('ul', { class: 'ac-list', role: 'listbox', hidden: true });
+    const pin = el('p', { class: 'pin' });
+    let results: Geo[] = [];
+    let active = -1;
+    let timer: number | undefined;
+    let seq = 0;
+
+    const paintPin = () => {
+      const has = vals.lat != null && vals.lng != null;
+      pin.classList.toggle('none', !has);
+      pin.replaceChildren(...(has
+        ? ['📍 Pin set · ', el('a', { href: `https://www.google.com/maps?q=${vals.lat},${vals.lng}`, target: '_blank', rel: 'noopener', textContent: 'Check it on Google Maps ↗' })]
+        : ['No pin yet — pick an address from the suggestions (or paste a Google Maps link).']));
+    };
+    const setText = (key: string, value: string) => {
+      vals[key] = value;
+      const other = fieldsBox.querySelector<HTMLInputElement>(`[data-key="${key}"] input`);
+      if (other) other.value = value;
+      clearError(key);
+    };
+    const choose = (g: Geo) => {
+      vals.lat = +g.lat.toFixed(6);
+      vals.lng = +g.lng.toFixed(6);
+      vals._country = g.p.country ?? '';
+      vals._city = cityOf(g.p);
+      const text = formatAddress(g.p);
+      input.value = text;
+      vals.address = text;
+      if (editing!.kind === 'dz') { if (g.p.country) setText('country', g.p.country); }
+      else setText('location', [vals._city, vals._country].filter(Boolean).join(', '));
+      dirty = true;
+      clearError('address');
+      list.hidden = true;
+      paintPin();
+    };
+    const paintList = () => {
+      list.hidden = results.length === 0;
+      list.replaceChildren(...results.map((g, i) => {
+        const p = g.p;
+        const title = p.name || [p.street, p.housenumber].filter(Boolean).join(' ') || cityOf(p) || p.country;
+        const sub = [p.name ? [p.street, p.housenumber].filter(Boolean).join(' ') : '', [p.postcode, cityOf(p)].filter(Boolean).join(' '), p.country].filter(Boolean).join(', ');
+        return el('li', { role: 'option', 'aria-selected': String(i === active), onmousedown: (e: Event) => { e.preventDefault(); choose(g); } },
+          el('strong', { textContent: title }), sub && el('small', { textContent: sub }));
+      }));
+    };
+
+    input.addEventListener('input', () => {
+      vals.address = input.value;
+      dirty = true;
+      clearTimeout(timer);
+      const q = input.value.trim();
+      const coords = parseCoords(q);
+      if (coords) {
+        reverseGeocode(coords[0], coords[1]).then((g) => {
+          choose(g ?? { lat: coords[0], lng: coords[1], p: {} });
+          if (!g) input.value = vals.address = '';
+          toast('📍 Pin set from the link');
+        }).catch(() => {});
+        return;
+      }
+      if (q.length < 3) { results = []; paintList(); return; }
+      timer = window.setTimeout(async () => {
+        const mine = ++seq;
+        try { const r = await searchAddress(q); if (mine === seq) { results = r; active = -1; paintList(); } } catch {}
+      }, 300);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (list.hidden || !results.length) return;
+      if (e.key === 'ArrowDown') { e.preventDefault(); active = (active + 1) % results.length; paintList(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); active = (active - 1 + results.length) % results.length; paintList(); }
+      else if (e.key === 'Enter') { e.preventDefault(); choose(results[Math.max(0, active)]); }
+      else if (e.key === 'Escape') { list.hidden = true; }
+    });
+    input.addEventListener('blur', () => setTimeout(() => { list.hidden = true; }, 150));
+    paintPin();
+    return wrap(f.key, f.label, 'sets the pin and country', el('div', { class: 'ac' }, input, list), pin);
   }
 
   function chipsEl(f: Field): HTMLElement {
@@ -497,36 +683,6 @@ import AdminShell from '../../layouts/AdminShell.astro';
     );
   }
 
-  function coordsEl(): HTMLElement {
-    const vals = editing!.values;
-    const lat = el('input', { type: 'number', step: 'any', value: vals.lat ?? '', placeholder: '47.3847', oninput: (e: Event) => { setVal('lat', num((e.target as HTMLInputElement).value)); paintLink(); } });
-    const lng = el('input', { type: 'number', step: 'any', value: vals.lng ?? '', placeholder: '9.6997', oninput: (e: Event) => { setVal('lng', num((e.target as HTMLInputElement).value)); paintLink(); } });
-    const paste = el('input', { type: 'text', placeholder: 'Paste “47.38, 9.69” or a Google Maps link' });
-    const link = el('p', { class: 'hint' });
-    const paintLink = () => {
-      link.replaceChildren(vals.lat != null && vals.lng != null
-        ? el('a', { href: `https://www.google.com/maps?q=${vals.lat},${vals.lng}`, target: '_blank', rel: 'noopener', textContent: 'Check the pin on Google Maps ↗' })
-        : 'Right-click the spot in Google Maps and click the coordinates to copy them.');
-    };
-    paste.addEventListener('input', () => {
-      const c = parseCoords(paste.value);
-      if (!c) return;
-      lat.value = String(c[0]); lng.value = String(c[1]);
-      setVal('lat', c[0]); setVal('lng', c[1]);
-      paste.value = '';
-      paintLink();
-      toast('📍 Coordinates set');
-    });
-    paintLink();
-    return el('div', { class: 'field' },
-      el('span', { textContent: 'Coordinates' }),
-      paste,
-      el('div', { class: 'row2' }, el('label', { class: 'field' }, el('span', { textContent: 'Latitude' }), lat), el('label', { class: 'field' }, el('span', { textContent: 'Longitude' }), lng)),
-      link,
-    );
-  }
-  const num = (raw: string) => (raw === '' || isNaN(Number(raw)) ? null : Number(raw));
-
   function webcamsEl(): HTMLElement {
     const box = el('div', { class: 'field' });
     const list = el('div', { class: 'cams' });
@@ -567,120 +723,211 @@ import AdminShell from '../../layouts/AdminShell.astro';
     return path;
   }
 
-  function mediaEl(): HTMLElement {
-    const { kind, values } = editing!;
-    const box = el('div', { class: 'field' });
-
-    // Profile photo → avatar_path, saved with the form.
-    const avatarImg = el('img', { class: 'avatar-preview', alt: '' });
-    const paintAvatar = () => {
-      avatarImg.hidden = !values.avatar_path;
-      if (values.avatar_path) avatarImg.src = photoUrl(env, values.avatar_path);
+  // File picker label that also accepts drag & drop.
+  function dropZone(label: string, multiple: boolean, onFiles: (files: File[]) => void) {
+    const input = el('input', { type: 'file', accept: 'image/*', multiple });
+    const zone = el('label', { class: 'upload' }, label, input);
+    const take = (list: FileList | null | undefined) => {
+      const files = Array.from(list ?? []).filter((f) => f.type.startsWith('image/'));
+      if (files.length) onFiles(multiple ? files : files.slice(0, 1));
     };
-    const avatarInput = el('input', { type: 'file', accept: 'image/*' });
-    avatarInput.addEventListener('change', async () => {
-      const file = avatarInput.files?.[0];
-      if (!file) return;
-      toast('Uploading…');
-      try {
-        setVal('avatar_path', await uploadImage(file, `${slug(values.name || 'place')}-avatar`));
-        paintAvatar();
-        toast('✓ Profile photo ready — save to apply');
-      } catch (e: any) { toast(`Upload failed: ${e.message}`); }
-      avatarInput.value = '';
-    });
-    paintAvatar();
+    input.addEventListener('change', () => { take(input.files); input.value = ''; });
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('drag'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
+    zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('drag'); take(e.dataTransfer?.files); });
+    return zone;
+  }
 
-    // Gallery → approved photos, added right away (place must exist).
-    const gallery = el('div', { class: 'media' });
-    const paintGallery = () => gallery.replaceChildren(...editing!.gallery.map((p) => {
-      const src = photoUrl(env, p.photo_path);
-      return el('div', { class: 'media-item' },
-        el('img', { src, alt: '', loading: 'lazy', onclick: () => openLightbox(src) }),
-        el('button', { type: 'button', class: 'del', 'aria-label': 'Remove photo', textContent: '✕', onclick: async () => {
-          if (!confirm('Remove this photo from the gallery?')) return;
-          const { error } = await sb.rpc('admin_delete_location_photo', { p_kind: kind, p_id: p.id });
-          if (error) return toast(`Failed: ${error.message}`);
-          editing!.gallery = editing!.gallery.filter((x) => x.id !== p.id);
-          paintGallery();
-          toast('Photo removed');
-        } }),
-      );
-    }));
-    const galleryInput = el('input', { type: 'file', accept: 'image/*', multiple: true });
-    galleryInput.addEventListener('change', async () => {
-      const files = Array.from(galleryInput.files ?? []);
-      if (!files.length || !editing?.original) return;
-      toast(`Uploading ${files.length} photo${files.length > 1 ? 's' : ''}…`);
-      try {
-        const paths = await Promise.all(files.map((f) => uploadImage(f, slug(editing!.original!))));
-        const { error } = await sb.rpc('admin_add_location_photos', { p_kind: kind, p_name: editing.original, p_paths: paths });
-        if (error) throw error;
-        await reloadGallery();
-        toast(`✓ ${files.length} photo${files.length > 1 ? 's' : ''} added`);
-      } catch (e: any) { toast(`Upload failed: ${e.message}`); }
-      galleryInput.value = '';
-    });
-    paintGallery();
-
-    add(box,
-      el('span', { textContent: 'Profile photo' }),
-      el('div', { class: 'avatar-row' }, avatarImg, el('label', { class: 'upload', style: 'flex:1' }, values.avatar_path ? 'Replace profile photo' : 'Upload profile photo', avatarInput)),
-      el('span', { textContent: `Gallery${editing!.gallery.length ? ` · ${editing!.gallery.length}` : ''}`, style: 'margin-top:8px' }),
-      gallery,
-      editing!.original
-        ? el('label', { class: 'upload' }, '+ Add photos (several at once)', galleryInput)
-        : el('p', { class: 'hint', textContent: 'Save the place first, then add gallery photos.' }),
-    );
+  // Profile photo → avatar_path: the round icon on the map and at the top of
+  // the place page. First thing in the form so it isn't mixed up with the gallery.
+  function profileEl(): HTMLElement {
+    const vals = editing!.values;
+    const box = el('div', { class: 'profile-card' });
+    const paint = () => {
+      const preview = vals.avatar_path
+        ? el('img', { class: 'avatar-preview', src: photoUrl(env, vals.avatar_path), alt: 'Profile photo', onclick: () => openLightbox(photoUrl(env, vals.avatar_path)) })
+        : el('div', { class: 'avatar-empty', textContent: 'No profile photo' });
+      box.replaceChildren(preview, el('div', { class: 'field' },
+        el('p', { class: 'hint', style: 'margin:0', textContent: 'The round icon on the map and at the top of the place page. Use the logo or a square photo — other pictures go in the gallery below.' }),
+        el('div', { class: 'profile-actions' },
+          dropZone(vals.avatar_path ? 'Replace profile photo' : 'Upload profile photo', false, async ([file]) => {
+            toast('Uploading…');
+            try {
+              setVal('avatar_path', await uploadImage(file, `${slug(vals.name || 'place')}-avatar`));
+              paint();
+              toast('✓ Profile photo ready — save to apply');
+            } catch (e: any) { toast(`Upload failed: ${e.message}`); }
+          }),
+          vals.avatar_path && el('button', { type: 'button', class: 'mini-btn', textContent: 'Remove', onclick: () => { setVal('avatar_path', null); paint(); } }),
+        ),
+      ));
+    };
+    paint();
     return box;
   }
 
-  async function reloadGallery() {
+  // Gallery: on an existing place photos go live right away; on a new one
+  // they wait here and upload right after the first save.
+  function galleryEl(): HTMLElement {
+    const box = el('div', { class: 'field' });
+    const grid = el('div', { class: 'media' });
+    const paint = () => {
+      const ed = editing!;
+      grid.replaceChildren(
+        ...ed.gallery.map((p) => {
+          const src = photoUrl(env, p.photo_path);
+          return el('div', { class: 'media-item' },
+            el('img', { src, alt: '', loading: 'lazy', onclick: () => openLightbox(src) }),
+            el('button', { type: 'button', class: 'del', 'aria-label': 'Remove photo', textContent: '✕', onclick: async () => {
+              if (!confirm('Remove this photo from the gallery?')) return;
+              const { error } = await sb.rpc('admin_delete_location_photo', { p_kind: ed.kind, p_id: p.id });
+              if (error) return toast(`Failed: ${error.message}`);
+              ed.gallery = ed.gallery.filter((x) => x.id !== p.id);
+              paint();
+              toast('Photo removed');
+            } }),
+          );
+        }),
+        ...ed.pending.map((p) => el('div', { class: 'media-item pending' },
+          el('img', { src: p.url, alt: '', onclick: () => openLightbox(p.url) }),
+          el('span', { class: 'badge', textContent: 'Uploads on save' }),
+          el('button', { type: 'button', class: 'del', 'aria-label': 'Remove photo', textContent: '✕', onclick: () => {
+            URL.revokeObjectURL(p.url);
+            ed.pending = ed.pending.filter((x) => x !== p);
+            paint();
+          } }),
+        )),
+      );
+      count.textContent = `${ed.gallery.length + ed.pending.length} photo${ed.gallery.length + ed.pending.length === 1 ? '' : 's'}`;
+    };
+    const count = el('span');
+    const zone = dropZone('+ Add photos — pick several or drop them here', true, async (files) => {
+      const ed = editing!;
+      if (!ed.original) {
+        ed.pending.push(...files.map((file) => ({ file, url: URL.createObjectURL(file) })));
+        dirty = true;
+        paint();
+        return;
+      }
+      toast(`Uploading ${files.length} photo${files.length > 1 ? 's' : ''}…`);
+      try {
+        await addGalleryPhotos(files);
+        paint();
+        toast(`✓ ${files.length} photo${files.length > 1 ? 's' : ''} added`);
+      } catch (e: any) { toast(`Upload failed: ${e.message}`); }
+    });
+    paint();
+    add(box, count, grid, zone);
+    return box;
+  }
+
+  async function addGalleryPhotos(files: File[]) {
+    const ed = editing!;
+    const paths = await Promise.all(files.map((f) => uploadImage(f, slug(ed.original!))));
+    const { error } = await sb.rpc('admin_add_location_photos', { p_kind: ed.kind, p_name: ed.original, p_paths: paths });
+    if (error) throw error;
+    await loadGallery();
+  }
+
+  async function loadGallery() {
     if (!editing?.original) return;
     const { kind, original } = editing;
     const { data } = await sb.from(kind === 'dz' ? 'dz_photos' : 'tunnel_photos')
       .select('*').eq(kind === 'dz' ? 'dz_name' : 'tunnel_name', original).eq('status', 'approved').order('created_at');
     editing.gallery = data ?? [];
-    renderEditor();
+  }
+
+  // ---------- Validation ----------
+  function clearError(key: string) {
+    const w = fieldsBox.querySelector<HTMLElement>(`[data-key="${key}"]`);
+    if (!w) return;
+    w.classList.remove('invalid');
+    const err = w.querySelector<HTMLElement>(':scope > .err');
+    if (err) err.hidden = true;
+  }
+  function showErrors(errors: Record<string, string>) {
+    let first: HTMLElement | null = null;
+    for (const w of fieldsBox.querySelectorAll<HTMLElement>('[data-key]')) {
+      const msg = errors[w.dataset.key!];
+      w.classList.toggle('invalid', !!msg);
+      const err = w.querySelector<HTMLElement>(':scope > .err');
+      if (err) { err.hidden = !msg; err.textContent = msg ?? ''; }
+      if (msg && !first) first = w;
+    }
+    if (first) {
+      first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      first.querySelector<HTMLElement>('input, textarea, select')?.focus({ preventScroll: true });
+    }
+    const n = Object.keys(errors).length;
+    toast(`Please fix ${n} field${n > 1 ? 's' : ''}`);
+  }
+  function validate(): Record<string, string> {
+    const { kind, original, values: v } = editing!;
+    const errors: Record<string, string> = {};
+    const name = (v.name ?? '').trim();
+    if (!name) errors.name = 'Give the place a name.';
+    else if (!original && places.some((p) => p.kind === kind && p.name.toLowerCase() === name.toLowerCase()))
+      errors.name = `“${name}” already exists — open it from the list instead.`;
+    if (v.lat == null || v.lng == null) errors.address = 'Pick an address from the suggestions so the pin can be placed.';
+    if (kind === 'dz' && !(v.country ?? '').trim()) errors.country = 'Country is required — pick an address or type it.';
+    if (kind === 'tunnel' && !(v.location ?? '').trim()) errors.location = 'Location is required, e.g. “Winterthur, Switzerland”.';
+    if (kind === 'dz' && v.altitude_m != null && (v.altitude_m < 300 || v.altitude_m > 8000)) errors.altitude_m = 'Exit altitude in metres, e.g. 4000.';
+    for (const k of ['price_no_coach_regular', 'price_no_coach_off', 'price_coach_regular', 'price_coach_off'])
+      if (kind === 'tunnel' && v[k] != null && v[k] < 0) errors[k] = 'Can’t be negative.';
+    return errors;
   }
 
   // ---------- Save ----------
   editor.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!editing) return;
+    const errors = validate();
+    if (Object.keys(errors).length) return showErrors(errors);
+
     const { kind, original, values } = editing;
-    const sections = kind === 'dz' ? DZ_SECTIONS : TUNNEL_SECTIONS;
     const payload: Record<string, any> = {};
-    for (const f of sections.flatMap((s) => s.fields)) {
+    for (const f of sectionsOf(kind).flatMap((s) => s.fields)) {
+      if (f.key === 'altitude_m' || (f.key === 'address' && kind === 'tunnel')) continue;
       let v = values[f.key];
       if (typeof v === 'string') v = v.trim() || null;
       payload[f.key] = v ?? (f.type === 'chips' ? [] : null);
     }
-    payload.lat = values.lat ?? null;
-    payload.lng = values.lng ?? null;
-    if (kind === 'dz') payload.webcams = values.webcams ?? [];
+    if (kind === 'dz') {
+      payload.altitude_ft = values.altitude_m == null ? null
+        : values.altitude_m === values._alt_m0 ? values.altitude_ft
+        : Math.round(values.altitude_m * FT_PER_M);
+      payload.webcams = values.webcams ?? [];
+    }
+    payload.lat = values.lat;
+    payload.lng = values.lng;
     payload.avatar_path = values.avatar_path ?? null;
-
-    const need = kind === 'dz' ? ['name', 'country', 'lat', 'lng'] : ['name', 'location', 'lat', 'lng'];
-    const missing = need.filter((k) => payload[k] == null || payload[k] === '');
-    if (missing.length) { toast(`Missing: ${missing.join(', ')}`); return; }
 
     const btn = $<HTMLButtonElement>('[data-save]');
     btn.disabled = true;
     const { data, error } = await sb.rpc('admin_save_location', { p_kind: kind, p_original_name: original, p_data: payload });
-    btn.disabled = false;
     if (error) {
-      toast(error.message.includes('duplicate key') ? `“${payload.name}” already exists` : `Save failed: ${error.message}`);
+      btn.disabled = false;
+      if (error.message.includes('duplicate key')) return showErrors({ name: `“${payload.name}” already exists.` });
+      if (error.message.includes('Name is required')) return showErrors({ name: 'Give the place a name.' });
+      toast(`Save failed: ${error.message}`);
       return;
     }
+
+    // New place: now that it exists, upload the photos that were waiting.
+    const waiting = editing.pending;
+    if (!original && waiting.length) {
+      editing.original = data;
+      toast(`Saved — uploading ${waiting.length} photo${waiting.length > 1 ? 's' : ''}…`);
+      try { await addGalleryPhotos(waiting.map((p) => p.file)); }
+      catch (err: any) { toast(`Saved, but photo upload failed: ${err.message}`); }
+      waiting.forEach((p) => URL.revokeObjectURL(p.url));
+    }
+    btn.disabled = false;
     dirty = false;
     toast(`✓ Saved · ${data}`);
     await loadPlaces();
-    if (!original) {
-      // Reopen as an existing place so gallery uploads are available.
-      const saved = places.find((p) => p.kind === kind && p.name === data);
-      if (saved) openEditor(kind, saved);
-    }
+    const saved = places.find((p) => p.kind === kind && p.name === data);
+    if (saved) openEditor(kind, saved);
   });
 
   window.addEventListener('beforeunload', (e) => { if (dirty) e.preventDefault(); });
@@ -710,14 +957,22 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
   initAdmin(async (client, e) => {
     sb = client; env = e;
-    if (editing && !confirm('Reload and discard your changes?')) return;
+    if (editing && dirty && !confirm('Reload and discard your changes?')) return;
     editing = null; dirty = false;
     editor.hidden = true; listView.hidden = false;
     await loadPlaces();
     // Dev preview of the editor: /admin/places?demo&edit (or &new).
     if (import.meta.env.DEV && location.search.includes('demo')) {
       if (location.search.includes('edit')) openEditor('dz', places.find((p) => p.kind === 'dz' && p.avatar_path)!);
-      else if (location.search.includes('new')) openEditor('tunnel', null);
+      else if (location.search.includes('new')) {
+        await openEditor('dz', null);
+        if (location.search.includes('invalid')) editor.requestSubmit();
+        const q = new URLSearchParams(location.search).get('q');
+        if (q) {
+          const a = fieldsBox.querySelector<HTMLInputElement>('[data-key="address"] input')!;
+          a.value = q; a.dispatchEvent(new Event('input')); a.focus();
+        }
+      }
     }
   }, import.meta.env.DEV ? demoClient : undefined);
 </script>
