@@ -411,6 +411,9 @@ import AdminShell from '../../layouts/AdminShell.astro';
   const kindToggle = $<HTMLElement>('[data-kind-toggle]');
 
   // ---------- List ----------
+  // Readable names for the "Missing: …" hint (column names say "altitude ft").
+  const MISSING_LABEL: Record<string, string> = { altitude_ft: 'altitude', price_no_coach_regular: 'price' };
+
   async function loadPlaces() {
     const [dz, tu] = await Promise.all([
       sb.from('dropzones').select('*').order('name'),
@@ -445,7 +448,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
         el('span', {},
           el('strong', { textContent: p.name }),
           el('small', { textContent: sub || (p.kind === 'dz' ? 'Dropzone' : 'Tunnel') }),
-          missing.length > 0 && el('small', { class: 'missing', textContent: `Missing: ${missing.map((m) => m.replace(/_/g, ' ')).join(', ')}` }),
+          missing.length > 0 && el('small', { class: 'missing', textContent: `Missing: ${missing.map((m) => MISSING_LABEL[m] ?? m.replace(/_/g, ' ')).join(', ')}` }),
         ),
       );
     }));
