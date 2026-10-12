@@ -8,7 +8,7 @@ export const SITE = {
   // Contact form → Web3Forms → your inbox. The access key is public by design
   // (it only lets people send *to* you). Get one at web3forms.com.
   web3formsKey: '5cff52be-0379-47af-a0b6-4bee2beaf3a8',
-  privacyEmail: '[privacy email]',
-  operator: '[operator name and address]',
+  privacyEmail: 'maik.gassner@gmail.com',
+  operator: 'Michael Gassner, Tristelstrasse 14, 9497 Triesenberg, Liechtenstein',
   appStoreUrl: '', // set once Arc is live in the App Store
 };

@@ -2,13 +2,13 @@
 // app and the website must say the same thing. Change both together.
 export type LegalSection = { heading: string; paragraphs?: string[]; bullets?: string[]; after?: string[] };
 
-export const UPDATED = 'Draft · 9 October 2026';
+export const UPDATED = 'Draft · 12 October 2026';
 
 export const PRIVACY: LegalSection[] = [
   {
     heading: 'Who we are',
     paragraphs: [
-      'Arc is a logbook and social app for skydivers, operated by [operator name and address]. For anything about your data, write to [privacy email].',
+      'Arc is a logbook and social app for skydivers, operated by Michael Gassner, Tristelstrasse 14, 9497 Triesenberg, Liechtenstein, who is responsible for your data (the controller). For anything about your data, write to maik.gassner@gmail.com.',
     ],
   },
   {
@@ -55,9 +55,18 @@ export const PRIVACY: LegalSection[] = [
       'Apple and Google — push delivery to your phone, and sign-in if you choose it.',
       'Open-Meteo — weather forecasts for dropzones. Your phone requests them directly, so Open-Meteo sees your IP address and the dropzone\'s location.',
       'Slack — our moderation notifications (reports, suggestions, bug reports).',
+      'Resend — sends our emails (sign-up confirmation, password reset). Your email address and the message. Ireland (EU).',
     ],
     after: [
-      'Links to websites, maps, meteoblue and webcams open or load content from those third parties under their own privacy terms. Where data goes outside Switzerland / the EU, we rely on standard contractual clauses or an adequacy decision.',
+      'Links to websites, maps, meteoblue and webcams open or load content from those third parties under their own privacy terms — webcam pictures from swisswebcams / Windy load directly on your phone, so the webcam host sees your IP address. Where data goes outside the EEA / Switzerland, we rely on standard contractual clauses or an adequacy decision.',
+    ],
+  },
+  {
+    heading: 'Our website',
+    bullets: [
+      'logwitharc.app is hosted by Vercel, which keeps short-lived server logs (such as IP address and browser) to deliver and protect the site. USA.',
+      'Beta sign-up: the email address you enter is stored in our database so we can invite you to the beta. Write to us to have it removed.',
+      'Contact form: your name, email and message are sent through Web3Forms to our inbox (maik.gassner@gmail.com) so we can reply.',
     ],
   },
   {
@@ -69,18 +78,18 @@ export const PRIVACY: LegalSection[] = [
   {
     heading: 'How long we keep it',
     paragraphs: [
-      'As long as you have an account. Settings → Delete account removes your account and everything in it — profile, logbook, documents, files, posts, chats — right away. Backups are overwritten within [30] days. Before deleting, you can export your logbook as an Excel file and your skydiver profile as a PDF.',
+      'As long as you have an account. Settings → Delete account removes your account and everything in it — profile, logbook, documents, files, posts, chats — right away. Backups are overwritten within 7 days. Before deleting, you can export your logbook as an Excel file and your skydiver profile as a PDF.',
     ],
   },
   {
     heading: 'Your rights',
     paragraphs: [
-      'You can access, correct, export and delete your data, withdraw consent, object to processing, and complain to a data protection authority — in Switzerland the FDPIC, in the EU the authority of your country (e.g. the Austrian DSB). Most of this you can do in the app; for anything else write to [privacy email].',
+      'You can access, correct, export and delete your data, withdraw consent, object to processing, and complain to a data protection authority — in Liechtenstein the Datenschutzstelle (DSS), in Switzerland the FDPIC, in the EU the authority of your country. Most of this you can do in the app; for anything else write to maik.gassner@gmail.com.',
     ],
   },
   {
     heading: 'Age',
-    paragraphs: ['Arc is for people who are old enough to skydive and at least [16] years old.'],
+    paragraphs: ['Arc is for people who are old enough to skydive and at least 16 years old.'],
   },
   {
     heading: 'Changes',
@@ -89,6 +98,10 @@ export const PRIVACY: LegalSection[] = [
 ];
 
 export const TERMS: LegalSection[] = [
+  {
+    heading: 'Who provides Arc',
+    paragraphs: ['Arc is provided by Michael Gassner, Tristelstrasse 14, 9497 Triesenberg, Liechtenstein. Contact: maik.gassner@gmail.com.'],
+  },
   {
     heading: 'Scope of the service',
     paragraphs: [
@@ -130,7 +143,7 @@ export const TERMS: LegalSection[] = [
   {
     heading: 'Accounts',
     paragraphs: [
-      'You need to be old enough to hold the skydiving licence or training status your profile claims, and at least [16] years old. One account per person; don\'t share your login. You can delete your account at any time in Settings — this deletes your data (see the Privacy Policy).',
+      'You need to be old enough to hold the skydiving licence or training status your profile claims, and at least 16 years old. One account per person; don\'t share your login. You can delete your account at any time in Settings — this deletes your data (see the Privacy Policy).',
     ],
   },
   {
@@ -151,6 +164,6 @@ export const TERMS: LegalSection[] = [
   },
   {
     heading: 'Governing law',
-    paragraphs: ['[To be set once Arc\'s operating entity and country are confirmed with counsel.]'],
+    paragraphs: ['These terms are governed by the law of the Principality of Liechtenstein. If you use Arc as a consumer, the mandatory consumer protection rules of the country you live in still apply, and you can also go to the courts there.'],
   },
 ];
