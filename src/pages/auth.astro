@@ -1,0 +1,133 @@
+---
+// Landing page for every link in Arc's auth emails (sign-up confirmation,
+// password reset, email change). The app sends them here via redirectTo /
+// emailRedirectTo (ARC/contexts/AuthContext.tsx). Works for TEST and PROD:
+// the project is read from the token itself. Nothing is stored — the
+// session lives only in this tab, long enough to set a new password.
+import Base from '../layouts/Base.astro';
+---
+<Base title="Account" noindex>
+  <div class="wrap narrow auth">
+    <div class="card" data-view="loading">
+      <p class="muted">One moment…</p>
+    </div>
+
+    <div class="card" data-view="recovery" hidden>
+      <h1>Set a new password</h1>
+      <p class="muted" data-email></p>
+      <form data-form>
+        <label>New password<input type="password" name="pw" autocomplete="new-password" minlength="8" required></label>
+        <label>Repeat password<input type="password" name="pw2" autocomplete="new-password" minlength="8" required></label>
+        <p class="err" data-err hidden></p>
+        <button type="submit">Save new password</button>
+      </form>
+    </div>
+
+    <div class="card" data-view="done" hidden>
+      <div class="ok">✓</div>
+      <h1 data-done-title>All set</h1>
+      <p class="muted" data-done-text></p>
+      <a class="btn" href="arc://">Open Arc</a>
+    </div>
+
+    <div class="card" data-view="error" hidden>
+      <h1>This link doesn’t work anymore</h1>
+      <p class="muted" data-error-text>Links from our emails can only be used once and expire after a while.</p>
+      <p class="muted">Open Arc and request a new one — e.g. “Forgot password?” on the login screen.</p>
+      <a class="btn" href="arc://">Open Arc</a>
+    </div>
+  </div>
+</Base>
+
+<style>
+  [hidden] { display: none !important; }
+  .auth { padding-block: 56px 80px; }
+  .card { background: var(--surface); border-radius: 24px; box-shadow: var(--shadow); padding: 32px 28px; max-width: 440px; margin: 0 auto; text-align: center; }
+  h1 { font-size: 1.6rem; font-weight: 800; margin: 0 0 8px; }
+  .muted { color: var(--fg-2); margin: 0 0 12px; }
+  form { display: grid; gap: 14px; margin-top: 20px; text-align: left; }
+  label { display: grid; gap: 6px; font-weight: 700; font-size: .9rem; color: var(--fg-2); }
+  input { font: inherit; font-size: 1rem; padding: 13px 15px; border-radius: 14px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); outline: none; }
+  input:focus { border-color: var(--coral-500); background: var(--surface); }
+  button, .btn {
+    display: inline-block; border: 0; cursor: pointer; border-radius: 999px; padding: 14px 22px; margin-top: 6px;
+    font: 800 1rem var(--font); color: #fff; text-decoration: none; text-align: center;
+    background: linear-gradient(180deg, var(--brand-top), var(--brand-bottom));
+  }
+  button:disabled { opacity: .6; cursor: default; }
+  .btn { margin-top: 16px; }
+  .err { color: var(--action); font-weight: 700; font-size: .9rem; margin: 0; }
+  .ok { width: 64px; height: 64px; margin: 0 auto 14px; border-radius: 50%; display: grid; place-items: center; background: #e8f4ef; color: #3e9e76; font-size: 1.8rem; font-weight: 800; }
+</style>
+
+<script>
+  import { createClient } from '@supabase/supabase-js';
+  import { ENVS } from '../lib/admin';
+
+  const show = (name: string) => document.querySelectorAll<HTMLElement>('[data-view]').forEach((v) => (v.hidden = v.dataset.view !== name));
+  const q = <T extends Element>(sel: string) => document.querySelector(sel) as T;
+
+  // Tokens arrive in the URL fragment; read them, then drop them from the address bar.
+  const params = new URLSearchParams(location.hash.slice(1) || location.search.slice(1));
+  history.replaceState(null, '', location.pathname);
+
+  const type = params.get('type');
+  const access = params.get('access_token');
+  const refresh = params.get('refresh_token');
+  const errorText = params.get('error_description');
+
+  // Which project issued the token (iss = https://<ref>.supabase.co/auth/v1).
+  function envFor(token: string) {
+    try {
+      const iss: string = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).iss ?? '';
+      return Object.values(ENVS).find((e) => iss.startsWith(e.url)) ?? null;
+    } catch { return null; }
+  }
+
+  async function run() {
+    if (errorText || !access || !refresh) {
+      if (errorText) q<HTMLElement>('[data-error-text]').textContent = errorText.replace(/\+/g, ' ') + '.';
+      return show('error');
+    }
+    const env = envFor(access);
+    if (!env) return show('error');
+    const sb = createClient(env.url, env.key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+    const { data, error } = await sb.auth.setSession({ access_token: access, refresh_token: refresh });
+    if (error || !data.user) return show('error');
+
+    if (type === 'recovery') {
+      q<HTMLElement>('[data-email]').textContent = `For ${data.user.email}`;
+      show('recovery');
+      const form = q<HTMLFormElement>('[data-form]');
+      const err = q<HTMLElement>('[data-err]');
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = new FormData(form);
+        const pw = String(fd.get('pw')), pw2 = String(fd.get('pw2'));
+        err.hidden = true;
+        if (pw.length < 8) { err.textContent = 'Use at least 8 characters.'; err.hidden = false; return; }
+        if (pw !== pw2) { err.textContent = 'The two passwords don’t match.'; err.hidden = false; return; }
+        const btn = form.querySelector('button')!;
+        btn.disabled = true;
+        const { error } = await sb.auth.updateUser({ password: pw });
+        btn.disabled = false;
+        if (error) { err.textContent = error.message; err.hidden = false; return; }
+        await sb.auth.signOut({ scope: 'local' });
+        q<HTMLElement>('[data-done-title]').textContent = 'Password updated';
+        q<HTMLElement>('[data-done-text]').textContent = 'Go back to Arc and log in with your new password.';
+        show('done');
+      });
+      return;
+    }
+
+    // signup / email_change / magiclink / invite: the link itself confirmed it.
+    await sb.auth.signOut({ scope: 'local' });
+    q<HTMLElement>('[data-done-title]').textContent = type === 'email_change' ? 'Email changed' : 'Email confirmed';
+    q<HTMLElement>('[data-done-text]').textContent = type === 'email_change'
+      ? `Your Arc account now uses ${data.user.email}.`
+      : 'Welcome to Arc! Open the app and log in.';
+    show('done');
+  }
+
+  run();
+</script>
