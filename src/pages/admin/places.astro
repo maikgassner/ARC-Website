@@ -221,6 +221,16 @@ import AdminShell from '../../layouts/AdminShell.astro';
   const STAY = ['Camper-friendly', 'Tent-friendly', 'On-site rooms', 'Bunkhouse', 'Hotels nearby'];
   const TUNNEL_FACILITIES = ['Showers', 'Café & bar', 'Gear rental', 'Lockers', 'Free parking', 'Video service', 'Shop', 'Kids area', 'WiFi'];
 
+  // Picked, not typed — same list as the app's suggest form.
+  const CURRENCIES = ['CHF', 'EUR', 'USD', 'GBP', 'SEK', 'NOK', 'DKK', 'CZK', 'PLN', 'HUF', 'AUD', 'NZD', 'CAD', 'ZAR', 'AED', 'THB'];
+  const CURRENCY_OPTIONS: [string, string][] = [['', 'Choose…'], ...CURRENCIES.map((c): [string, string] => [c, c])];
+  // Pre-fills the currency from the picked address's country (only when empty).
+  const EURO = ['AT', 'BE', 'CY', 'DE', 'EE', 'ES', 'FI', 'FR', 'GR', 'HR', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PT', 'SI', 'SK', 'ME', 'XK', 'AD', 'MC', 'SM', 'VA'];
+  const CURRENCY_BY_COUNTRY: Record<string, string> = {
+    CH: 'CHF', LI: 'CHF', US: 'USD', GB: 'GBP', SE: 'SEK', NO: 'NOK', DK: 'DKK', CZ: 'CZK', PL: 'PLN', HU: 'HUF',
+    AU: 'AUD', NZ: 'NZD', CA: 'CAD', ZA: 'ZAR', AE: 'AED', TH: 'THB', ...Object.fromEntries(EURO.map((c) => [c, 'EUR'])),
+  };
+
   const PROFILE: Section = { title: 'Profile photo', wide: true, extra: 'profile', fields: [] };
   const GALLERY: Section = { title: 'Gallery', wide: true, extra: 'gallery', fields: [] };
 
@@ -238,7 +248,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     ] },
     { title: 'Pricing', fields: [
       { key: 'guest_ticket_price', label: 'Guest jump ticket', type: 'number', decimal: true, placeholder: '32.50', hint: 'One jump for a visiting fun jumper' },
-      { key: 'currency', label: 'Currency', type: 'text', placeholder: 'CHF / EUR' },
+      { key: 'currency', label: 'Currency', type: 'select', options: CURRENCY_OPTIONS },
     ] },
     { title: 'Contact', fields: [
       { key: 'phone', label: 'Phone', type: 'text', placeholder: '+41 44 123 45 67' },
@@ -277,7 +287,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
       { key: 'website', label: 'Website', type: 'text', placeholder: 'windwerk-example.ch' },
     ] },
     { title: 'Pricing', fields: [
-      { key: 'currency', label: 'Currency', type: 'text', placeholder: 'CHF' },
+      { key: 'currency', label: 'Currency', type: 'select', options: CURRENCY_OPTIONS },
       { key: 'price_no_coach_regular', label: 'No coaching · regular', type: 'number', placeholder: '900', hint: 'Per hour' },
       { key: 'price_no_coach_off', label: 'No coaching · off times', type: 'number', hint: 'Per hour' },
       { key: 'price_coach_regular', label: 'Incl. coaching · regular', type: 'number', hint: 'Per hour' },
@@ -294,7 +304,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   ];
 
   // Fields that carry over when switching a *new* place between DZ and tunnel.
-  const SHARED_KEYS = ['name', 'address', 'lat', 'lng', 'hours', 'phone', 'website', 'description', 'facilities', 'avatar_path', '_country', '_city'];
+  const SHARED_KEYS = ['name', 'address', 'lat', 'lng', 'hours', 'phone', 'website', 'description', 'facilities', 'avatar_path', 'currency', '_country', '_city'];
 
   const FT_PER_M = 1 / 0.3048;
 
@@ -545,8 +555,10 @@ import AdminShell from '../../layouts/AdminShell.astro';
       return wrap(f.key, f.label, f.hint, el('textarea', { value: v ?? '', placeholder: f.placeholder ?? '', rows: 5, oninput: (e: Event) => setVal(f.key, (e.target as HTMLTextAreaElement).value) }));
     }
     if (f.type === 'select') {
+      // A stored value outside the list still shows (and stays selected).
+      const opts = v && !f.options!.some(([val]) => val === v) ? [...f.options!, [v, v] as [string, string]] : f.options!;
       return wrap(f.key, f.label, f.hint, el('select', { onchange: (e: Event) => setVal(f.key, (e.target as HTMLSelectElement).value || null) },
-        ...f.options!.map(([val, label]) => el('option', { value: val, textContent: label, selected: (v ?? '') === val }))));
+        ...opts.map(([val, label]) => el('option', { value: val, textContent: label, selected: (v ?? '') === val }))));
     }
     if (f.type === 'address') return addressEl(f);
     if (f.type === 'hours') return hoursEl(f);
@@ -586,6 +598,13 @@ import AdminShell from '../../layouts/AdminShell.astro';
       vals.address = text;
       if (editing!.kind === 'dz') { if (g.p.country) setText('country', g.p.country); }
       else setText('location', [vals._city, vals._country].filter(Boolean).join(', '));
+      const cur = CURRENCY_BY_COUNTRY[String(g.p.countrycode ?? '').toUpperCase()];
+      if (cur && !vals.currency) {
+        vals.currency = cur;
+        const sel = fieldsBox.querySelector<HTMLSelectElement>('[data-key="currency"] select');
+        if (sel) sel.value = cur;
+        clearError('currency');
+      }
       dirty = true;
       clearError('address');
       list.hidden = true;
