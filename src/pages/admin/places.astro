@@ -164,6 +164,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   :global(.rt-preview ul) { margin: 0 0 8px; padding-left: 1.2em; }
   :global(.rt-preview li::marker) { color: var(--action); }
   :global(.rt-preview strong) { color: var(--fg); }
+  :global(.rt-preview a) { color: var(--accent-text); font-weight: 600; text-decoration: underline; }
   :global(.rt-preview > :last-child) { margin-bottom: 0; }
   :global(.rt-empty) { color: var(--fg-3); }
 
@@ -598,7 +599,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     return chipsEl(f);
   }
 
-  // Description: plain text with **bold** and "- " bullet lines — the app's
+  // Description: plain text with **bold**, [text](url) links and "- " bullet lines — the app's
   // RichDescription (ARC/components/RichDescription.tsx) renders the same
   // two markers. Toolbar buttons insert them; the preview mirrors the app.
   function richTextEl(f: Field): HTMLElement {
@@ -609,9 +610,18 @@ import AdminShell from '../../layouts/AdminShell.astro';
       const blocks: HTMLElement[] = [];
       let para: string[] = [];
       let list: HTMLElement | null = null;
+      // Same tokens as the app: **bold**, [text](url), bare www./https:// links.
+      const TOKEN = /(\*\*[^*]+\*\*|\[[^\]]+\]\([^)\s]+\)|(?:https?:\/\/|www\.)[^\s<>()]+[^\s<>().,;:!?'"])/g;
+      const href = (u: string) => (/^https?:\/\//i.test(u) ? u : `https://${u}`);
       const inline = (node: HTMLElement, text: string) => {
-        for (const part of text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean))
-          node.append(part.length > 4 && part.startsWith('**') && part.endsWith('**') ? el('strong', { textContent: part.slice(2, -2) }) : part);
+        for (const part of text.split(TOKEN).filter(Boolean)) {
+          const md = part.match(/^\[([^\]]+)\]\(([^)\s]+)\)$/);
+          if (part.length > 4 && part.startsWith('**') && part.endsWith('**')) node.append(el('strong', { textContent: part.slice(2, -2) }));
+          else if (md || /^(https?:\/\/|www\.)/i.test(part)) {
+            const url = href(md ? md[2] : part);
+            node.append(el('a', { href: url, target: '_blank', rel: 'noopener', textContent: md ? md[1] : part.replace(/^https?:\/\//i, '') }));
+          } else node.append(part);
+        }
         return node;
       };
       const flush = () => { if (para.length) { blocks.push(inline(el('p'), para.join('\n'))); para = []; } list = null; };
@@ -647,9 +657,21 @@ import AdminShell from '../../layouts/AdminShell.astro';
       ta.setRangeText(next, start, end, 'select');
       ta.focus(); commit();
     };
+    // Turn the selection into [text](url); without a selection insert a placeholder text.
+    const link = () => {
+      const { selectionStart: a, selectionEnd: b, value } = ta;
+      const raw = prompt('Link address (https://…)');
+      if (!raw?.trim()) return;
+      const url = /^https?:\/\//i.test(raw.trim()) ? raw.trim() : `https://${raw.trim()}`;
+      const label = value.slice(a, b) || 'link text';
+      ta.setRangeText(`[${label}](${url})`, a, b, 'end');
+      if (a === b) ta.setSelectionRange(a + 1, a + 1 + label.length);
+      ta.focus(); commit();
+    };
     ta.addEventListener('input', commit);
     ta.addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') { e.preventDefault(); bold(); }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); link(); }
       // Enter inside a bullet continues the list; Enter on an empty bullet ends it.
       if (e.key === 'Enter' && !e.shiftKey) {
         const { selectionStart: a, value } = ta;
@@ -663,7 +685,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
     const toolbar = el('div', { class: 'rt-toolbar' },
       el('button', { type: 'button', class: 'rt-btn', title: 'Bold (⌘B)', onclick: bold }, el('strong', { textContent: 'B' })),
       el('button', { type: 'button', class: 'rt-btn', title: 'Bullet list', onclick: bullets, textContent: '• List' }),
-      el('span', { class: 'rt-help', textContent: 'Select text, then click — or type **bold** and “- ” for bullets.' }),
+      el('button', { type: 'button', class: 'rt-btn', title: 'Link (⌘K)', onclick: link, textContent: '🔗 Link' }),
+      el('span', { class: 'rt-help', textContent: 'Select text, then click. Web addresses become links on their own.' }),
     );
     return wrap(f.key, f.label, f.hint, toolbar, ta, el('span', { class: 'rt-label', textContent: 'Preview · as shown in the app' }), preview);
   }
@@ -1083,7 +1106,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   function demoClient(): SupabaseClient {
     const rows: Record<string, any[]> = {
       dropzones: [
-        { name: 'Skydive Hohenems', country: 'Austria', lat: 47.3847, lng: 9.6997, altitude_ft: 13500, aircraft: '1× Cessna 208', hours: '9:00 am – sunset', website: 'skydivehohenems.at', facilities: ['Showers', 'WiFi'], stay: ['Camper-friendly'], webcams: ['https://www.foto-webcam.eu/webcam/dornbirn/current/400.jpg'], foehn_region: 'north', foehn_region_label: 'Alpennordseite · Rheintal', avatar_path: '/img/landing/map.jpg', description: 'Alpine backdrop with views over the **Rhine Valley**.\n\nGood to know:\n- Licensed jumpers only\n- Pay in **cash or TWINT**\n- Bring licence and repack card' },
+        { name: 'Skydive Hohenems', country: 'Austria', lat: 47.3847, lng: 9.6997, altitude_ft: 13500, aircraft: '1× Cessna 208', hours: '9:00 am – sunset', website: 'skydivehohenems.at', facilities: ['Showers', 'WiFi'], stay: ['Camper-friendly'], webcams: ['https://www.foto-webcam.eu/webcam/dornbirn/current/400.jpg'], foehn_region: 'north', foehn_region_label: 'Alpennordseite · Rheintal', avatar_path: '/img/landing/map.jpg', description: 'Alpine backdrop with views over the **Rhine Valley**.\n\nGood to know:\n- Licensed jumpers only\n- Pay in **cash or TWINT**\n- Bring licence and repack card\n\nBoogie info: www.speckboogie.ch or [our calendar](https://www.skydive.ch/kalender).' },
         { name: 'Skydive Algarve', country: 'Portugal', lat: 37.13, lng: -8.62, facilities: [], stay: [], webcams: [] },
       ],
       tunnels: [{ name: 'Windwerk Winterthur', location: 'Winterthur, Switzerland', lat: 47.5, lng: 8.72, diameter: '4.3 m', hours: 'Tue–Fri 12:00–21:00 · Sat–Sun 10:00–20:00', currency: 'CHF', price_no_coach_regular: 900, facilities: ['Lockers'] }],
