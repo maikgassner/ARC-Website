@@ -150,6 +150,23 @@ import AdminShell from '../../layouts/AdminShell.astro';
   }
   .savebar-hint { margin-right: auto; padding-left: 10px; font-size: .88rem; color: var(--fg-3); }
 
+  /* ---------- Rich text (description) ---------- */
+  :global(.rt-toolbar) { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  :global(.rt-btn) {
+    min-width: 38px; height: 34px; padding: 0 12px; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--fg); font: 600 .88rem var(--font);
+  }
+  :global(.rt-btn:hover) { border-color: var(--fg-3); }
+  :global(.rt-help) { font-size: .78rem; color: var(--fg-3); margin-left: 4px; }
+  :global(.rt-label) { font-size: .72rem !important; font-weight: 800 !important; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3) !important; margin-top: 4px; }
+  :global(.rt-preview) { padding: 14px 16px; border-radius: 12px; background: var(--bg); font-size: .92rem; line-height: 1.6; color: var(--fg-2); }
+  :global(.rt-preview p) { margin: 0 0 8px; white-space: pre-wrap; }
+  :global(.rt-preview ul) { margin: 0 0 8px; padding-left: 1.2em; }
+  :global(.rt-preview li::marker) { color: var(--action); }
+  :global(.rt-preview strong) { color: var(--fg); }
+  :global(.rt-preview > :last-child) { margin-bottom: 0; }
+  :global(.rt-empty) { color: var(--fg-3); }
+
   /* ---------- Hours toggle ---------- */
   :global(.switch-row) { display: flex; align-items: center; gap: 12px; cursor: pointer; font-weight: 700; font-size: .92rem; color: var(--fg); }
   :global(.switch-row input) { position: absolute; opacity: 0; pointer-events: none; }
@@ -569,9 +586,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
       });
       return wrap(f.key, f.label, readonly ? 'can’t be renamed' : f.hint, input);
     }
-    if (f.type === 'textarea') {
-      return wrap(f.key, f.label, f.hint, el('textarea', { value: v ?? '', placeholder: f.placeholder ?? '', rows: 5, oninput: (e: Event) => setVal(f.key, (e.target as HTMLTextAreaElement).value) }));
-    }
+    if (f.type === 'textarea') return richTextEl(f);
     if (f.type === 'select') {
       // A stored value outside the list still shows (and stays selected).
       const opts = v && !f.options!.some(([val]) => val === v) ? [...f.options!, [v, v] as [string, string]] : f.options!;
@@ -581,6 +596,76 @@ import AdminShell from '../../layouts/AdminShell.astro';
     if (f.type === 'address') return addressEl(f);
     if (f.type === 'hours') return hoursEl(f);
     return chipsEl(f);
+  }
+
+  // Description: plain text with **bold** and "- " bullet lines — the app's
+  // RichDescription (ARC/components/RichDescription.tsx) renders the same
+  // two markers. Toolbar buttons insert them; the preview mirrors the app.
+  function richTextEl(f: Field): HTMLElement {
+    const ta = el('textarea', { value: editing!.values[f.key] ?? '', placeholder: f.placeholder ?? '', rows: 8 });
+    const preview = el('div', { class: 'rt-preview' });
+    const commit = () => { setVal(f.key, ta.value); paintPreview(); };
+    const paintPreview = () => {
+      const blocks: HTMLElement[] = [];
+      let para: string[] = [];
+      let list: HTMLElement | null = null;
+      const inline = (node: HTMLElement, text: string) => {
+        for (const part of text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean))
+          node.append(part.length > 4 && part.startsWith('**') && part.endsWith('**') ? el('strong', { textContent: part.slice(2, -2) }) : part);
+        return node;
+      };
+      const flush = () => { if (para.length) { blocks.push(inline(el('p'), para.join('\n'))); para = []; } list = null; };
+      for (const line of ta.value.split('\n')) {
+        if (/^\s*[-•*]\s+/.test(line)) {
+          if (para.length) { blocks.push(inline(el('p'), para.join('\n'))); para = []; }
+          if (!list) { list = el('ul'); blocks.push(list); }
+          list.append(inline(el('li'), line.replace(/^\s*[-•*]\s+/, '')));
+        } else if (!line.trim()) flush();
+        else { list = null; para.push(line); }
+      }
+      flush();
+      preview.replaceChildren(...(blocks.length ? blocks : [el('p', { class: 'rt-empty', textContent: 'Preview appears here.' })]));
+    };
+
+    // Wrap the selection in **…** (or insert a placeholder to type over).
+    const bold = () => {
+      const { selectionStart: a, selectionEnd: b, value } = ta;
+      const sel = value.slice(a, b) || 'bold text';
+      ta.setRangeText(`**${sel}**`, a, b, 'end');
+      if (a === b) ta.setSelectionRange(a + 2, a + 2 + sel.length);
+      ta.focus(); commit();
+    };
+    // Toggle "- " on every line the selection touches.
+    const bullets = () => {
+      const { selectionStart: a, selectionEnd: b, value } = ta;
+      const start = value.lastIndexOf('\n', a - 1) + 1;
+      const endIdx = value.indexOf('\n', b);
+      const end = endIdx === -1 ? value.length : endIdx;
+      const lines = value.slice(start, end).split('\n');
+      const allOn = lines.every((l) => /^\s*[-•*]\s+/.test(l) || !l.trim());
+      const next = lines.map((l) => (!l.trim() ? l : allOn ? l.replace(/^\s*[-•*]\s+/, '') : `- ${l}`)).join('\n');
+      ta.setRangeText(next, start, end, 'select');
+      ta.focus(); commit();
+    };
+    ta.addEventListener('input', commit);
+    ta.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') { e.preventDefault(); bold(); }
+      // Enter inside a bullet continues the list; Enter on an empty bullet ends it.
+      if (e.key === 'Enter' && !e.shiftKey) {
+        const { selectionStart: a, value } = ta;
+        const lineStart = value.lastIndexOf('\n', a - 1) + 1;
+        const line = value.slice(lineStart, a);
+        if (/^\s*-\s+\S/.test(line)) { e.preventDefault(); ta.setRangeText('\n- ', a, ta.selectionEnd, 'end'); commit(); }
+        else if (/^\s*-\s*$/.test(line)) { e.preventDefault(); ta.setRangeText('', lineStart, a, 'end'); commit(); }
+      }
+    });
+    paintPreview();
+    const toolbar = el('div', { class: 'rt-toolbar' },
+      el('button', { type: 'button', class: 'rt-btn', title: 'Bold (⌘B)', onclick: bold }, el('strong', { textContent: 'B' })),
+      el('button', { type: 'button', class: 'rt-btn', title: 'Bullet list', onclick: bullets, textContent: '• List' }),
+      el('span', { class: 'rt-help', textContent: 'Select text, then click — or type **bold** and “- ” for bullets.' }),
+    );
+    return wrap(f.key, f.label, f.hint, toolbar, ta, el('span', { class: 'rt-label', textContent: 'Preview · as shown in the app' }), preview);
   }
 
   function addressEl(f: Field): HTMLElement {
@@ -998,7 +1083,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   function demoClient(): SupabaseClient {
     const rows: Record<string, any[]> = {
       dropzones: [
-        { name: 'Skydive Hohenems', country: 'Austria', lat: 47.3847, lng: 9.6997, altitude_ft: 13500, aircraft: '1× Cessna 208', hours: '9:00 am – sunset', website: 'skydivehohenems.at', facilities: ['Showers', 'WiFi'], stay: ['Camper-friendly'], webcams: ['https://www.foto-webcam.eu/webcam/dornbirn/current/400.jpg'], foehn_region: 'north', foehn_region_label: 'Alpennordseite · Rheintal', avatar_path: '/img/landing/map.jpg', description: 'Alpine backdrop.' },
+        { name: 'Skydive Hohenems', country: 'Austria', lat: 47.3847, lng: 9.6997, altitude_ft: 13500, aircraft: '1× Cessna 208', hours: '9:00 am – sunset', website: 'skydivehohenems.at', facilities: ['Showers', 'WiFi'], stay: ['Camper-friendly'], webcams: ['https://www.foto-webcam.eu/webcam/dornbirn/current/400.jpg'], foehn_region: 'north', foehn_region_label: 'Alpennordseite · Rheintal', avatar_path: '/img/landing/map.jpg', description: 'Alpine backdrop with views over the **Rhine Valley**.\n\nGood to know:\n- Licensed jumpers only\n- Pay in **cash or TWINT**\n- Bring licence and repack card' },
         { name: 'Skydive Algarve', country: 'Portugal', lat: 37.13, lng: -8.62, facilities: [], stay: [], webcams: [] },
       ],
       tunnels: [{ name: 'Windwerk Winterthur', location: 'Winterthur, Switzerland', lat: 47.5, lng: 8.72, diameter: '4.3 m', hours: 'Tue–Fri 12:00–21:00 · Sat–Sun 10:00–20:00', currency: 'CHF', price_no_coach_regular: 900, facilities: ['Lockers'] }],
