@@ -210,7 +210,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   type Kind = 'dz' | 'tunnel';
   type Place = Record<string, any> & { name: string };
   type FieldType = 'text' | 'number' | 'textarea' | 'chips' | 'chipsText' | 'hours' | 'select' | 'address';
-  type Field = { key: string; label: string; type: FieldType; placeholder?: string; hint?: string; suggest?: string[]; options?: [string, string][] };
+  type Field = { key: string; label: string; type: FieldType; placeholder?: string; hint?: string; suggest?: string[]; options?: [string, string][]; decimal?: boolean };
   type Section = { title: string; wide?: boolean; fields: Field[]; extra?: 'webcams' | 'profile' | 'gallery' };
 
   const $ = <T extends Element>(sel: string) => document.querySelector(sel) as T;
@@ -235,6 +235,10 @@ import AdminShell from '../../layouts/AdminShell.astro';
       { key: 'altitude_m', label: 'Exit altitude', type: 'number', placeholder: '4000', hint: 'In metres' },
       { key: 'aircraft', label: 'Aircraft', type: 'chipsText', placeholder: 'e.g. 2× Twin Otter — Enter to add', suggest: ['1× Cessna 208', '1× Pilatus Porter', '1× Twin Otter', '2× Twin Otter', '1× Cessna 182', '1× Skyvan', '1× Casa 212'] },
       { key: 'hours', label: 'Opening hours', type: 'hours' },
+    ] },
+    { title: 'Pricing', fields: [
+      { key: 'guest_ticket_price', label: 'Guest jump ticket', type: 'number', decimal: true, placeholder: '32.50', hint: 'One jump for a visiting fun jumper' },
+      { key: 'currency', label: 'Currency', type: 'text', placeholder: 'CHF / EUR' },
     ] },
     { title: 'Contact', fields: [
       { key: 'phone', label: 'Phone', type: 'text', placeholder: '+41 44 123 45 67' },
@@ -422,7 +426,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
         ? ['altitude_ft', 'aircraft', 'hours', 'website'].filter((k) => !p[k])
         : ['hours', 'website', 'price_no_coach_regular'].filter((k) => !p[k]);
       const sub = p.kind === 'dz'
-        ? [p.country, p.altitude_ft && `${Number(p.altitude_ft).toLocaleString('de-CH')} ft`, p.aircraft].filter(Boolean).join(' · ')
+        ? [p.country, p.altitude_ft && `${Math.round(p.altitude_ft * 0.3048).toLocaleString('de-CH')} m`, p.aircraft, p.guest_ticket_price != null && `${Number(p.guest_ticket_price)} ${p.currency ?? ''}`.trim()].filter(Boolean).join(' · ')
         : [p.location, p.diameter].filter(Boolean).join(' · ');
       return el('button', { type: 'button', class: 'place-row', onclick: () => openEditor(p.kind, p) },
         p.avatar_path
@@ -527,11 +531,11 @@ import AdminShell from '../../layouts/AdminShell.astro';
       const readonly = f.key === 'name' && editing!.original !== null;
       const input = el('input', {
         type: f.type === 'number' ? 'number' : 'text', value: v ?? '', placeholder: f.placeholder ?? '', readOnly: readonly,
-        min: f.type === 'number' ? '0' : undefined,
+        min: f.type === 'number' ? '0' : undefined, step: f.decimal ? '0.01' : undefined,
         title: readonly ? 'The name identifies the place and can’t be changed here.' : undefined,
         oninput: (e: Event) => {
           const raw = (e.target as HTMLInputElement).value;
-          setVal(f.key, f.type === 'number' ? (raw === '' ? null : Math.round(Number(raw))) : raw);
+          setVal(f.key, f.type === 'number' ? (raw === '' ? null : f.decimal ? Math.round(Number(raw) * 100) / 100 : Math.round(Number(raw))) : raw);
           if (f.key === 'name' && !editing!.original) paintHead();
         },
       });
@@ -872,6 +876,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
     if (kind === 'dz' && !(v.country ?? '').trim()) errors.country = 'Country is required — pick an address or type it.';
     if (kind === 'tunnel' && !(v.location ?? '').trim()) errors.location = 'Location is required, e.g. “Winterthur, Switzerland”.';
     if (kind === 'dz' && v.altitude_m != null && (v.altitude_m < 300 || v.altitude_m > 8000)) errors.altitude_m = 'Exit altitude in metres, e.g. 4000.';
+    if (kind === 'dz' && v.guest_ticket_price != null && v.guest_ticket_price < 0) errors.guest_ticket_price = 'Can’t be negative.';
+    if (kind === 'dz' && v.guest_ticket_price != null && !(v.currency ?? '').trim()) errors.currency = 'Which currency is the ticket price in?';
     for (const k of ['price_no_coach_regular', 'price_no_coach_off', 'price_coach_regular', 'price_coach_off'])
       if (kind === 'tunnel' && v[k] != null && v[k] < 0) errors[k] = 'Can’t be negative.';
     return errors;
