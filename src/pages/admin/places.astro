@@ -847,15 +847,24 @@ import AdminShell from '../../layouts/AdminShell.astro';
     );
   }
 
+  // Same rule as the app (ARC/components/Webcams.tsx): direct image links,
+  // and swisswebcams/Windy pages via their public current-picture JPEG.
+  function webcamImageUrl(url: string): string | null {
+    if (/\.(jpe?g|png|webp|gif)(\?|#|$)/i.test(url)) return url;
+    if (!/(swisswebcams\.ch|windy\.com)/i.test(url)) return null;
+    const id = url.match(/(?:webcam[:/]|zoom\/|webcams\/)(\d{9,11})/i)?.[1] ?? url.match(/\b(\d{10})\b/)?.[1];
+    return id ? `https://images-webcams.windy.com/${id.slice(-2)}/${id}/current/normal/${id}.jpg` : null;
+  }
+
   function webcamsEl(): HTMLElement {
     const box = el('div', { class: 'field' });
     const list = el('div', { class: 'cams' });
     const input = el('input', { type: 'url', placeholder: 'https://… webcam image or page' });
     const read = (): string[] => editing!.values.webcams ?? [];
     const paint = () => list.replaceChildren(...read().map((url, i) => {
-      const isImg = /\.(jpe?g|png|webp|gif)(\?|$)/i.test(url);
+      const img = webcamImageUrl(url);
       return el('div', { class: 'cam' },
-        isImg ? el('img', { src: url, alt: '', loading: 'lazy' }) : el('span', { class: 'noimg', textContent: 'Web page' }),
+        img ? el('img', { src: img, alt: '', loading: 'lazy' }) : el('span', { class: 'noimg', textContent: 'Web page' }),
         el('a', { href: url, target: '_blank', rel: 'noopener', textContent: url }),
         el('button', { type: 'button', class: 'mini-btn', textContent: 'Remove', onclick: () => { setVal('webcams', read().filter((_, j) => j !== i)); paint(); } }),
       );
@@ -871,7 +880,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
     paint();
     add(box,
-      el('span', {}, 'Webcams nearby', el('em', { textContent: ' · direct image links show a preview' })),
+      el('span', {}, 'Webcams nearby', el('em', { textContent: ' · image links and swisswebcams/Windy pages show a live preview' })),
       list,
       el('div', { class: 'inline' }, input, el('button', { type: 'button', textContent: 'Add', onclick: commit })),
     );
