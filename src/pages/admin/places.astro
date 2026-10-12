@@ -245,6 +245,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
       { key: 'altitude_m', label: 'Exit altitude', type: 'number', placeholder: '4000', hint: 'In metres' },
       { key: 'aircraft', label: 'Aircraft', type: 'chipsText', placeholder: 'e.g. 2× Twin Otter — Enter to add', suggest: ['1× Cessna 208', '1× Pilatus Porter', '1× Twin Otter', '2× Twin Otter', '1× Cessna 182', '1× Skyvan', '1× Casa 212'] },
       { key: 'hours', label: 'Opening hours', type: 'hours' },
+      { key: 'hours_url', label: 'Hours / calendar link', type: 'text', placeholder: 'https://… their calendar or opening-hours page', hint: 'optional · with no hours above, the app shows just this link' },
     ] },
     { title: 'Pricing', fields: [
       { key: 'guest_ticket_price', label: 'Guest jump ticket', type: 'number', decimal: true, placeholder: '32.50', hint: 'One jump for a visiting fun jumper' },
@@ -281,6 +282,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
       { key: 'height', label: 'Height', type: 'text', placeholder: '17 m' },
       { key: 'max_speed', label: 'Max speed', type: 'text', placeholder: '280 km/h' },
       { key: 'hours', label: 'Opening hours', type: 'hours' },
+      { key: 'hours_url', label: 'Hours / calendar link', type: 'text', placeholder: 'https://… their calendar or opening-hours page', hint: 'optional · with no hours above, the app shows just this link' },
     ] },
     { title: 'Contact', fields: [
       { key: 'phone', label: 'Phone', type: 'text', placeholder: '+41 44 123 45 67' },
@@ -304,7 +306,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   ];
 
   // Fields that carry over when switching a *new* place between DZ and tunnel.
-  const SHARED_KEYS = ['name', 'address', 'lat', 'lng', 'hours', 'phone', 'website', 'description', 'facilities', 'avatar_path', 'currency', '_country', '_city'];
+  const SHARED_KEYS = ['name', 'address', 'lat', 'lng', 'hours', 'hours_url', 'phone', 'website', 'description', 'facilities', 'avatar_path', 'currency', '_country', '_city'];
 
   const FT_PER_M = 1 / 0.3048;
 
@@ -435,9 +437,11 @@ import AdminShell from '../../layouts/AdminShell.astro';
     $<HTMLElement>('[data-list-count]').textContent =
       `${shown.length} of ${places.length} places · ${places.filter((p) => p.kind === 'dz').length} dropzones, ${places.filter((p) => p.kind === 'tunnel').length} tunnels`;
     $<HTMLElement>('[data-places]').replaceChildren(...shown.map((p) => {
+      // A calendar link counts as "has hours".
+      const has = (k: string) => (k === 'hours' ? !!(p.hours || p.hours_url) : !!p[k]);
       const missing = p.kind === 'dz'
-        ? ['altitude_ft', 'aircraft', 'hours', 'website'].filter((k) => !p[k])
-        : ['hours', 'website', 'price_no_coach_regular'].filter((k) => !p[k]);
+        ? ['altitude_ft', 'aircraft', 'hours', 'website'].filter((k) => !has(k))
+        : ['hours', 'website', 'price_no_coach_regular'].filter((k) => !has(k));
       const sub = p.kind === 'dz'
         ? [p.country, p.altitude_ft && `${Math.round(p.altitude_ft * 0.3048).toLocaleString('de-CH')} m`, p.aircraft, p.guest_ticket_price != null && `${Number(p.guest_ticket_price)} ${p.currency ?? ''}`.trim()].filter(Boolean).join(' · ')
         : [p.location, p.diameter].filter(Boolean).join(' · ');
@@ -900,6 +904,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
     if (kind === 'dz' && v.altitude_m != null && (v.altitude_m < 300 || v.altitude_m > 8000)) errors.altitude_m = 'Exit altitude in metres, e.g. 4000.';
     if (kind === 'dz' && v.guest_ticket_price != null && v.guest_ticket_price < 0) errors.guest_ticket_price = 'Can’t be negative.';
     if (kind === 'dz' && v.guest_ticket_price != null && !(v.currency ?? '').trim()) errors.currency = 'Which currency is the ticket price in?';
+    const hu = (v.hours_url ?? '').trim();
+    if (hu && (/\s/.test(hu) || !/^(https?:\/\/)?[^/]+\.[a-z]{2,}/i.test(hu))) errors.hours_url = 'That doesn’t look like a web address.';
     for (const k of ['price_no_coach_regular', 'price_no_coach_off', 'price_coach_regular', 'price_coach_off'])
       if (kind === 'tunnel' && v[k] != null && v[k] < 0) errors[k] = 'Can’t be negative.';
     return errors;
@@ -926,6 +932,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
         : Math.round(values.altitude_m * FT_PER_M);
       payload.webcams = values.webcams ?? [];
     }
+    if (payload.hours_url && !/^https?:\/\//i.test(payload.hours_url)) payload.hours_url = `https://${payload.hours_url}`;
     payload.lat = values.lat;
     payload.lng = values.lng;
     payload.avatar_path = values.avatar_path ?? null;
