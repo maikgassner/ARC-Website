@@ -150,6 +150,16 @@ import AdminShell from '../../layouts/AdminShell.astro';
   }
   .savebar-hint { margin-right: auto; padding-left: 10px; font-size: .88rem; color: var(--fg-3); }
 
+  /* ---------- Hours toggle ---------- */
+  :global(.switch-row) { display: flex; align-items: center; gap: 12px; cursor: pointer; font-weight: 700; font-size: .92rem; color: var(--fg); }
+  :global(.switch-row input) { position: absolute; opacity: 0; pointer-events: none; }
+  :global(.switch) { position: relative; flex: none; width: 44px; height: 26px; border-radius: 999px; background: var(--ink-200); transition: background .15s; }
+  :global(.switch)::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.2); transition: transform .15s; }
+  :global(.switch-row input:checked + .switch) { background: var(--fg); }
+  :global(.switch-row input:checked + .switch)::after { transform: translateX(18px); }
+  :global(.switch-row input:focus-visible + .switch) { outline: 3px solid var(--coral-500); outline-offset: 2px; }
+  :global(.hours-body) { display: grid; gap: 8px; }
+
   /* ---------- Kind toggle (new places) ---------- */
   .kind-toggle { display: flex; gap: 4px; padding: 4px; border-radius: 999px; background: var(--ink-100); margin-left: auto; }
   .kind-toggle button {
@@ -244,8 +254,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
     { title: 'Jumping', fields: [
       { key: 'altitude_m', label: 'Exit altitude', type: 'number', placeholder: '4000', hint: 'In metres' },
       { key: 'aircraft', label: 'Aircraft', type: 'chipsText', placeholder: 'e.g. 2× Twin Otter — Enter to add', suggest: ['1× Cessna 208', '1× Pilatus Porter', '1× Twin Otter', '2× Twin Otter', '1× Cessna 182', '1× Skyvan', '1× Casa 212'] },
+      { key: 'hours_url', label: 'Opening hours link', type: 'text', placeholder: 'https://… their calendar or opening-hours page', hint: 'the DZ’s own hours / calendar page' },
       { key: 'hours', label: 'Opening hours', type: 'hours' },
-      { key: 'hours_url', label: 'Hours / calendar link', type: 'text', placeholder: 'https://… their calendar or opening-hours page', hint: 'optional · with no hours above, the app shows just this link' },
     ] },
     { title: 'Pricing', fields: [
       { key: 'guest_ticket_price', label: 'Guest jump ticket', type: 'number', decimal: true, placeholder: '32.50', hint: 'One jump for a visiting fun jumper' },
@@ -281,8 +291,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
       { key: 'diameter', label: 'Diameter', type: 'text', placeholder: '4.3 m' },
       { key: 'height', label: 'Height', type: 'text', placeholder: '17 m' },
       { key: 'max_speed', label: 'Max speed', type: 'text', placeholder: '280 km/h' },
+      { key: 'hours_url', label: 'Opening hours link', type: 'text', placeholder: 'https://… their calendar or opening-hours page', hint: 'the DZ’s own hours / calendar page' },
       { key: 'hours', label: 'Opening hours', type: 'hours' },
-      { key: 'hours_url', label: 'Hours / calendar link', type: 'text', placeholder: 'https://… their calendar or opening-hours page', hint: 'optional · with no hours above, the app shows just this link' },
     ] },
     { title: 'Contact', fields: [
       { key: 'phone', label: 'Phone', type: 'text', placeholder: '+41 44 123 45 67' },
@@ -306,7 +316,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   ];
 
   // Fields that carry over when switching a *new* place between DZ and tunnel.
-  const SHARED_KEYS = ['name', 'address', 'lat', 'lng', 'hours', 'hours_url', 'phone', 'website', 'description', 'facilities', 'avatar_path', 'currency', '_country', '_city'];
+  const SHARED_KEYS = ['name', 'address', 'lat', 'lng', 'hours', 'hours_url', '_showHours', 'phone', 'website', 'description', 'facilities', 'avatar_path', 'currency', '_country', '_city'];
 
   const FT_PER_M = 1 / 0.3048;
 
@@ -339,16 +349,17 @@ import AdminShell from '../../layouts/AdminShell.astro';
       if (m && days.length && value.trim()) days.forEach((d) => { perDay[d] = tidy(value); });
       else general = tidy(seg);
     }
-    const anyDay = perDay.some(Boolean);
-    return perDay.map((v) => { const x = v ?? general ?? (anyDay ? 'Closed' : ''); return x === 'Closed' ? '' : x; });
+    // Unnamed days stay empty (shown as nothing in the app); an explicit "Closed" is kept.
+    return perDay.map((v) => v ?? general ?? '');
   }
   function serializeHours(values: string[]): string {
-    const v = values.map((x) => x.trim() || 'Closed');
-    if (values.every((x) => !x.trim())) return '';
+    const v = values.map((x) => x.trim());
+    if (v.every((x) => !x)) return '';
     if (v.every((x) => x === v[0])) return v[0];
     const SH = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const parts: string[] = [];
     for (let i = 0; i < 7; ) {
+      if (!v[i]) { i++; continue; }
       let j = i;
       while (j + 1 < 7 && v[j + 1] === v[i]) j++;
       parts.push(`${i === j ? SH[i] : `${SH[i]}–${SH[j]}`} ${v[i]}`);
@@ -693,11 +704,16 @@ import AdminShell from '../../layouts/AdminShell.astro';
     return box;
   }
 
+  // Fixed hours are optional on top of the link: a toggle shows the
+  // per-day inputs. Empty days stay empty (the app shows only filled days);
+  // toggling off clears the hours on save.
   function hoursEl(f: Field): HTMLElement {
-    const days = parseHours(editing!.values[f.key]);
+    const vals = editing!.values;
+    if (vals._showHours === undefined) vals._showHours = !!(vals[f.key] ?? '').trim();
+    const days = parseHours(vals[f.key]);
     const save = () => setVal(f.key, serializeHours(days) || null);
     const inputs = WEEKDAYS.map((d, i) => el('input', {
-      type: 'text', value: days[i], placeholder: 'Closed',
+      type: 'text', value: days[i], placeholder: '',
       oninput: (e: Event) => { days[i] = (e.target as HTMLInputElement).value; save(); },
     }));
     const all = el('input', { type: 'text', placeholder: 'e.g. 09:00–sunset' });
@@ -706,10 +722,20 @@ import AdminShell from '../../layouts/AdminShell.astro';
       inputs.forEach((inp) => (inp.value = all.value.trim()));
       save();
     };
-    return el('div', { class: 'field' },
-      el('span', {}, f.label, el('em', { textContent: ' · empty = closed' })),
+    const body = el('div', { class: 'hours-body' },
       el('div', { class: 'inline' }, all, el('button', { type: 'button', textContent: 'Set every day', onclick: applyAll })),
       el('div', { class: 'hours' }, ...WEEKDAYS.map((d, i) => el('label', {}, d, inputs[i]))),
+      el('p', { class: 'hint', textContent: 'Leave a day empty to not show it. Type “Closed” to say so explicitly.' }),
+    );
+    body.hidden = !vals._showHours;
+    const toggle = el('input', { type: 'checkbox', checked: vals._showHours, onchange: (e: Event) => {
+      vals._showHours = (e.target as HTMLInputElement).checked;
+      body.hidden = !vals._showHours;
+      dirty = true;
+    } });
+    return el('div', { class: 'field', 'data-key': f.key },
+      el('label', { class: 'switch-row' }, toggle, el('span', { class: 'switch' }), el('span', {}, 'Also show fixed opening hours in the app')),
+      body,
     );
   }
 
@@ -933,6 +959,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
       payload.webcams = values.webcams ?? [];
     }
     if (payload.hours_url && !/^https?:\/\//i.test(payload.hours_url)) payload.hours_url = `https://${payload.hours_url}`;
+    if (!values._showHours) payload.hours = null;
     payload.lat = values.lat;
     payload.lng = values.lng;
     payload.avatar_path = values.avatar_path ?? null;
