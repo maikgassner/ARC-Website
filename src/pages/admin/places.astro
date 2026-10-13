@@ -960,7 +960,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
     put('facilities', d.facilities);
     put('hours_url', d.hours_url);
     if (Array.isArray(d.hours_per_day) && d.hours_per_day.some((x: string) => x?.trim()) && empty(v.hours)) {
-      v.hours = serializeHours(d.hours_per_day.map((x: string) => x ?? ''));
+      const week = Array.from({ length: 7 }, (_, i) => d.hours_per_day[i] ?? '');
+      v.hours = serializeHours(week);
       v._showHours = true; n++;
     }
     if (ed.kind === 'dz') {
