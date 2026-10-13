@@ -40,6 +40,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     <div class="editor-grid" data-fields></div>
     <div class="savebar">
       <span class="savebar-hint" data-save-hint></span>
+      <button type="button" class="ghost-btn danger" data-delete hidden>Delete</button>
       <button type="button" class="ghost-btn" data-cancel>Cancel</button>
       <button type="submit" class="primary-btn" data-save>Save</button>
     </div>
@@ -148,6 +149,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
     margin-top: 20px; padding: 12px; border-radius: 999px; background: rgba(255, 255, 255, .92);
     backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(41, 43, 44, .14);
   }
+  .ghost-btn.danger { color: var(--no); }
+  .ghost-btn.danger:hover { border-color: var(--no); color: var(--no); }
   .savebar-hint { margin-right: auto; padding-left: 10px; font-size: .88rem; color: var(--fg-3); }
 
   /* ---------- Rich text (description) ---------- */
@@ -524,6 +527,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     kindToggle.hidden = !!original;
     $$<HTMLButtonElement>('[data-kind]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.kind === kind)));
     $<HTMLElement>('[data-save-hint]').textContent = original ? '' : 'Name and address are required.';
+    $<HTMLButtonElement>('[data-delete]').hidden = !original;
   }
 
   // Switching type on a new place keeps whatever both forms share.
@@ -550,6 +554,20 @@ import AdminShell from '../../layouts/AdminShell.astro';
   $<HTMLButtonElement>('[data-back]').addEventListener('click', closeEditor);
   $<HTMLButtonElement>('[data-cancel]').addEventListener('click', closeEditor);
   editor.addEventListener('input', () => { dirty = true; });
+
+  // Mostly for cleaning up bulk imports (/admin/import). Photos, suggestions
+  // and reviews of the place go with it (admin_delete_location, 0094).
+  $<HTMLButtonElement>('[data-delete]').addEventListener('click', async () => {
+    if (!editing?.original) return;
+    const { kind, original } = editing;
+    if (!confirm(`Delete “${original}” with its photos, reviews and suggestions? This can’t be undone.`)) return;
+    const { error } = await sb.rpc('admin_delete_location', { p_kind: kind, p_name: original });
+    if (error) { toast(`Delete failed: ${error.message}`); return; }
+    dirty = false;
+    closeEditor();
+    toast(`Deleted · ${original}`);
+    await loadPlaces();
+  });
 
   const setVal = (key: string, v: any) => { editing!.values[key] = v; dirty = true; clearError(key); };
   const sectionsOf = (kind: Kind) => (kind === 'dz' ? DZ_SECTIONS : TUNNEL_SECTIONS);

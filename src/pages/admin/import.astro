@@ -1,0 +1,271 @@
+---
+// Bulk-add dropzones: OpenStreetMap (Overpass) is used only as a discovery
+// list of candidates — names + websites, queried live, never stored. Each
+// selected candidate's own website then goes through the same
+// admin-fill-from-website edge function as the editor's "Fill from website",
+// and only the basics are saved (name, pin, country, address, website, phone,
+// altitude, aircraft, description). Prices and opening hours are left for the
+// community / admin, since they change and drafts get them wrong more often.
+import AdminShell from '../../layouts/AdminShell.astro';
+---
+<AdminShell title="Import" sub="Find dropzones that aren’t in Arc yet and draft them from their own websites." active="import">
+  <div class="toolbar">
+    <select data-region aria-label="Region">
+      <option value="europe">Europe</option>
+      <option value="na_east">North America — east</option>
+      <option value="na_west">North America — west</option>
+      <option value="samerica">South & Central America</option>
+      <option value="africa_me">Africa & Middle East</option>
+      <option value="asia">Asia</option>
+      <option value="oceania">Oceania</option>
+    </select>
+    <button type="button" class="ghost-btn" data-find>Find candidates</button>
+    <span class="grow"></span>
+    <button type="button" class="primary-btn small" data-import disabled>Import selected</button>
+  </div>
+  <p class="hint" data-summary>Candidates come from OpenStreetMap (sport = skydiving / parachuting). Places already in Arc — same name, same website or within 2 km — are skipped. Only candidates with a website can be drafted.</p>
+  <div class="cand-head" data-cand-head hidden>
+    <label><input type="checkbox" data-all> Select all with a website</label>
+    <span data-progress></span>
+  </div>
+  <div class="cands" data-cands></div>
+  <p class="osm">Candidate list © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a></p>
+</AdminShell>
+
+<style>
+  .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  .toolbar select { width: auto; min-width: 240px; }
+  .grow { flex: 1; }
+  .hint { color: var(--fg-3); font-size: .9rem; margin: 14px 0; max-width: 760px; }
+  .cand-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin: 8px 0; font-weight: 700; color: var(--fg-2); }
+  .cand-head label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+  .cands { display: grid; gap: 8px; }
+  :global(.cand) {
+    display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center;
+    padding: 12px 14px; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow);
+  }
+  :global(.cand.off) { opacity: .5; }
+  :global(.cand strong) { display: block; }
+  :global(.cand small) { display: block; color: var(--fg-3); font-size: .82rem; word-break: break-all; }
+  :global(.cand .state) { font-size: .85rem; font-weight: 700; color: var(--fg-3); text-align: right; max-width: 320px; }
+  :global(.cand .state.ok) { color: var(--ok); }
+  :global(.cand .state.err) { color: var(--no); font-weight: 600; }
+  :global(.cand input[type="checkbox"]), .cand-head input { width: 18px; height: 18px; accent-color: var(--fg); }
+  .osm { color: var(--fg-3); font-size: .8rem; margin-top: 24px; }
+  .osm a { color: inherit; }
+  @media (max-width: 640px) { :global(.cand) { grid-template-columns: auto 1fr; } :global(.cand .state) { grid-column: 2; text-align: left; } }
+</style>
+
+<script>
+  import type { SupabaseClient } from '@supabase/supabase-js';
+  import { el, toast, initAdmin, showError } from '../../lib/admin';
+
+  // south, west, north, east — split so each Overpass query stays fast.
+  const REGIONS: Record<string, [number, number, number, number][]> = {
+    europe: [[34, -25, 72, 45]],
+    na_east: [[7, -100, 72, -50]],
+    na_west: [[7, -170, 72, -100]],
+    samerica: [[-56, -95, 7, -30]],
+    africa_me: [[-36, -20, 34, 65]],
+    asia: [[-11, 45, 72, 180]],
+    oceania: [[-50, 110, -11, 180]],
+  };
+  const OVERPASS = ['https://overpass.kumi.systems/api/interpreter', 'https://overpass-api.de/api/interpreter'];
+  const FT_PER_M = 1 / 0.3048;
+  const PARALLEL = 3;
+
+  type Cand = { id: string; name: string; lat: number; lng: number; website: string; host: string; town: string; dup?: string; state?: string; err?: boolean };
+
+  const $ = <T extends Element>(sel: string) => document.querySelector(sel) as T;
+  const list = $<HTMLElement>('[data-cands]');
+  const head = $<HTMLElement>('[data-cand-head]');
+  const summary = $<HTMLElement>('[data-summary]');
+  const progress = $<HTMLElement>('[data-progress]');
+  const findBtn = $<HTMLButtonElement>('[data-find]');
+  const importBtn = $<HTMLButtonElement>('[data-import]');
+  const allBox = $<HTMLInputElement>('[data-all]');
+
+  let sb: SupabaseClient;
+  let cands: Cand[] = [];
+  const picked = new Set<string>();
+  let running = false;
+
+  const hostOf = (u: string) => { try { return new URL(/^https?:/i.test(u) ? u : `https://${u}`).hostname.replace(/^www\./, '').toLowerCase(); } catch { return ''; } };
+  const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  function km(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+    const r = Math.PI / 180, x = Math.sin((b.lat - a.lat) * r / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin((b.lng - a.lng) * r / 2) ** 2;
+    return 12742 * Math.asin(Math.sqrt(x));
+  }
+
+  async function overpass(bbox: number[]): Promise<any[]> {
+    const q = `[out:json][timeout:120];nwr["sport"~"skydiving|parachuting"](${bbox.join(',')});out center tags;`;
+    for (const url of OVERPASS) {
+      try {
+        const res = await fetch(url, { method: 'POST', body: new URLSearchParams({ data: q }) });
+        if (res.ok && res.headers.get('content-type')?.includes('json')) return (await res.json()).elements ?? [];
+      } catch {}
+    }
+    throw new Error('OpenStreetMap didn’t answer — try again in a minute.');
+  }
+
+  // A club often has several OSM objects (hangar, landing area, club house):
+  // one candidate per website, preferring the airfield / named club.
+  const RANK = (t: Record<string, string>) => (t.aeroway === 'aerodrome' ? 3 : t.club || t.leisure === 'sports_centre' ? 2 : t.name ? 1 : 0);
+
+  async function find() {
+    findBtn.disabled = true; importBtn.disabled = true;
+    summary.textContent = 'Asking OpenStreetMap… (up to a minute)';
+    list.replaceChildren(); head.hidden = true; picked.clear();
+    try {
+      const [dz, tu] = await Promise.all([
+        sb.from('dropzones').select('name, lat, lng, website'),
+        sb.from('tunnels').select('name, lat, lng, website'),
+      ]);
+      if (dz.error || tu.error) return showError((dz.error || tu.error)!.message);
+      const existing = [...(dz.data ?? []), ...(tu.data ?? [])];
+      const names = new Map(existing.map((p) => [norm(p.name), p.name]));
+      const hosts = new Map(existing.filter((p) => p.website).map((p) => [hostOf(p.website), p.name]));
+
+      const els = (await Promise.all(REGIONS[$<HTMLSelectElement>('[data-region]').value].map(overpass))).flat();
+      const best = new Map<string, { e: any; rank: number }>();
+      for (const e of els) {
+        const t = e.tags ?? {};
+        const website = t.website || t['contact:website'] || t.url || '';
+        const lat = e.lat ?? e.center?.lat, lng = e.lon ?? e.center?.lon;
+        if (lat == null || (!t.name && !website)) continue;
+        const key = hostOf(website) || `osm-${e.type}${e.id}`;
+        const rank = RANK(t);
+        if (!best.has(key) || rank > best.get(key)!.rank) best.set(key, { e: { ...e, lat, lon: lng, website }, rank });
+      }
+      cands = [...best.values()].map(({ e }) => {
+        const t = e.tags ?? {};
+        const c: Cand = {
+          id: `${e.type}${e.id}`, name: t.name || hostOf(e.website), lat: e.lat, lng: e.lon,
+          website: e.website ? (/^https?:/i.test(e.website) ? e.website : `https://${e.website}`) : '',
+          host: hostOf(e.website), town: [t['addr:city'], t['addr:country']].filter(Boolean).join(', '),
+        };
+        c.dup = names.get(norm(c.name)) ?? (c.host && hosts.get(c.host)) ?? existing.find((p) => p.lat != null && km(p, c) < 2)?.name;
+        return c;
+      }).sort((a, b) => Number(!!a.dup) - Number(!!b.dup) || Number(!a.website) - Number(!b.website) || a.name.localeCompare(b.name));
+
+      const fresh = cands.filter((c) => !c.dup && c.website);
+      fresh.forEach((c) => picked.add(c.id));
+      summary.textContent = `${cands.length} candidates · ${cands.filter((c) => c.dup).length} already in Arc · ${cands.filter((c) => !c.dup && !c.website).length} without a website · ${fresh.length} can be drafted. Untick anything that isn’t a dropzone (shops, clubs without their own airfield, closed places).`;
+      head.hidden = false;
+      render();
+    } catch (err: any) {
+      summary.textContent = err.message;
+    } finally {
+      findBtn.disabled = false;
+    }
+  }
+
+  function render() {
+    const can = (c: Cand) => !c.dup && !!c.website && !c.state;
+    list.replaceChildren(...cands.map((c) => {
+      const box = el('input', { type: 'checkbox', checked: picked.has(c.id), disabled: !can(c) || running });
+      box.addEventListener('change', () => { box.checked ? picked.add(c.id) : picked.delete(c.id); paint(); });
+      const state = c.state ?? (c.dup ? `In Arc as “${c.dup}”` : !c.website ? 'No website' : '');
+      return el('div', { class: `cand${can(c) || c.state ? '' : ' off'}` },
+        box,
+        el('div', {},
+          el('strong', { textContent: c.name }),
+          el('small', {}, c.website ? el('a', { href: c.website, target: '_blank', rel: 'noopener', textContent: c.host }) : '', c.town ? ` · ${c.town}` : '')),
+        el('span', { class: `state${c.state ? (c.err ? ' err' : ' ok') : ''}`, textContent: state }));
+    }));
+    paint();
+  }
+
+  function paint() {
+    const selectable = cands.filter((c) => !c.dup && c.website && !c.state);
+    importBtn.disabled = running || !selectable.some((c) => picked.has(c.id));
+    importBtn.textContent = running ? 'Importing…' : `Import selected (${selectable.filter((c) => picked.has(c.id)).length})`;
+    allBox.checked = selectable.length > 0 && selectable.every((c) => picked.has(c.id));
+  }
+  allBox.addEventListener('change', () => {
+    cands.filter((c) => !c.dup && c.website && !c.state).forEach((c) => (allBox.checked ? picked.add(c.id) : picked.delete(c.id)));
+    render();
+  });
+
+  // Prefer the address from the place's own site (geocoded like the editor
+  // does); the OSM pin is only the fallback when that fails or lands far away.
+  async function geocode(address: string): Promise<{ lat: number; lng: number; country?: string } | null> {
+    try {
+      const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(address)}&limit=1&lang=en`);
+      const f = res.ok ? (await res.json()).features?.[0] : null;
+      return f ? { lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], country: f.properties?.country } : null;
+    } catch { return null; }
+  }
+
+  async function importOne(c: Cand, taken: Set<string>) {
+    const set = (s: string, err = false) => { c.state = s; c.err = err; render(); };
+    set('Reading website…');
+    const { data, error } = await sb.functions.invoke('admin-fill-from-website', { body: { url: c.website, kind: 'dz' } });
+    if (error || !data?.draft) {
+      let msg = error?.message ?? 'No draft came back.';
+      try { msg = (await (error as any)?.context?.json?.())?.error ?? msg; } catch {}
+      return set(msg, true);
+    }
+    const d = data.draft;
+    const name = (d.name || c.name).trim();
+    if (taken.has(norm(name))) return set(`Skipped — “${name}” already exists`, true);
+
+    let pin = { lat: c.lat, lng: c.lng }, country = d.country || '';
+    if (d.address) {
+      const g = await geocode(d.address);
+      if (g && km(g, c) < 30) { pin = g; country ||= g.country ?? ''; }
+    }
+    if (!country) country = (await reverseCountry(pin)) ?? '';
+
+    const payload = {
+      name, lat: pin.lat, lng: pin.lng, country: country || null,
+      address: d.address || null, website: d.website || c.website, phone: d.phone || null,
+      altitude_ft: d.altitude_m ? Math.round(d.altitude_m * FT_PER_M) : null,
+      aircraft: d.aircraft?.length ? d.aircraft.join(', ') : null,
+      description: d.description || null, facilities: [], stay: [], webcams: [],
+    };
+    const { error: saveErr } = await sb.rpc('admin_save_location', { p_kind: 'dz', p_original_name: null, p_data: payload });
+    if (saveErr) return set(saveErr.message.includes('duplicate key') ? `Skipped — “${name}” already exists` : `Save failed: ${saveErr.message}`, true);
+    taken.add(norm(name));
+    set(`✓ Added as “${name}”${d.notes ? ` — ${d.notes}` : ''}`);
+  }
+
+  async function reverseCountry(p: { lat: number; lng: number }): Promise<string | null> {
+    try {
+      const res = await fetch(`https://photon.komoot.io/reverse?lat=${p.lat}&lon=${p.lng}&lang=en`);
+      return res.ok ? (await res.json()).features?.[0]?.properties?.country ?? null : null;
+    } catch { return null; }
+  }
+
+  importBtn.addEventListener('click', async () => {
+    const queue = cands.filter((c) => picked.has(c.id) && !c.dup && c.website && !c.state);
+    if (!queue.length || !confirm(`Draft and add ${queue.length} dropzone${queue.length > 1 ? 's' : ''} to the database? Each takes 10–30 seconds; keep this tab open.`)) return;
+    running = true; findBtn.disabled = true; render();
+    const { data } = await sb.from('dropzones').select('name');
+    const taken = new Set((data ?? []).map((p) => norm(p.name)));
+    const total = queue.length;
+    let done = 0;
+    const worker = async () => {
+      for (let c = queue.shift(); c; c = queue.shift()) {
+        try { await importOne(c, taken); } catch (err: any) { c.state = err.message; c.err = true; }
+        done++;
+        progress.textContent = `${done} / ${total}`;
+        render();
+      }
+    };
+    progress.textContent = `0 / ${total}`;
+    await Promise.all(Array.from({ length: PARALLEL }, worker));
+    running = false; findBtn.disabled = false;
+    const ok = cands.filter((c) => c.state?.startsWith('✓')).length;
+    progress.textContent = `${ok} added · ${total - ok} not`;
+    toast(`✓ Import finished — ${ok} added`);
+    render();
+  });
+
+  findBtn.addEventListener('click', find);
+
+  initAdmin(async (client) => {
+    sb = client;
+    if (!running) { cands = []; list.replaceChildren(); head.hidden = true; paint(); }
+  });
+</script>
