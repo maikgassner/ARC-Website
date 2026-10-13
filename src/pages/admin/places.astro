@@ -240,7 +240,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
 <script>
   import type { SupabaseClient } from '@supabase/supabase-js';
-  import { el, add, photoUrl, openLightbox, toast, initAdmin, showError, toAvatar, BUCKET, type Env } from '../../lib/admin';
+  import { el, add, photoUrl, openLightbox, toast, initAdmin, showError, toAvatar, PROD_ONLY, BUCKET, type Env } from '../../lib/admin';
 
   type Kind = 'dz' | 'tunnel';
   type Place = Record<string, any> & { name: string };
@@ -949,6 +949,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     btn.addEventListener('click', async () => {
       const url = input.value.trim();
       if (!url) { toast('Paste the website address first'); return; }
+      if (env === 'test') { status.textContent = PROD_ONLY; return; }
       btn.disabled = true;
       status.textContent = 'Reading the website… (10–30 seconds)';
       const { data, error } = await sb.functions.invoke('admin-fill-from-website', { body: { url, kind: editing!.kind } });
@@ -1029,6 +1030,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     const findLogo = async () => {
       const url = String(vals.website ?? '').trim();
       if (!url) { toast('Add the website first (Contact section or Quick fill)'); return; }
+      if (env === 'test') { logoStatus = PROD_ONLY; paint(); return; }
       logos.forEach((l) => URL.revokeObjectURL(l.url));
       logos = []; logoStatus = 'Looking for the logo on the website…'; paint();
       const { data, error } = await sb.functions.invoke('admin-fill-from-website', { body: { url, mode: 'logo' } });

@@ -81,7 +81,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
 <script>
   import type { SupabaseClient } from '@supabase/supabase-js';
-  import { el, toast, initAdmin, showError, toAvatar, BUCKET } from '../../lib/admin';
+  import { el, toast, initAdmin, showError, toAvatar, PROD_ONLY, BUCKET, type Env } from '../../lib/admin';
 
   // south, west, north, east — split so each Overpass query stays fast.
   const REGIONS: Record<string, [number, number, number, number][]> = {
@@ -122,6 +122,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   const allBox = $<HTMLInputElement>('[data-all]');
 
   let sb: SupabaseClient;
+  let env: Env = 'prod';
   let cands: Cand[] = [];
   const picked = new Set<string>();
   let running = false;
@@ -286,6 +287,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   }
 
   importBtn.addEventListener('click', async () => {
+    if (env === 'test') { toast(PROD_ONLY); return; }
     const queue = cands.filter((c) => picked.has(c.id) && !c.dup && c.website && !c.state);
     if (!queue.length || !confirm(`Draft and add ${queue.length} place${queue.length > 1 ? 's' : ''} to the database? Each takes 10–30 seconds; keep this tab open.`)) return;
     running = true; findBtn.disabled = true; render();
@@ -340,6 +342,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   }
 
   findLogosBtn.addEventListener('click', async () => {
+    if (env === 'test') { logoSummary.textContent = PROD_ONLY; return; }
     findLogosBtn.disabled = true;
     const [dz, tu] = await Promise.all([
       sb.from('dropzones').select('name, website').is('avatar_path', null).not('website', 'is', null).order('name'),
@@ -397,8 +400,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
     toast(`✓ ${todo.filter((r) => !r.err).length} profile photos saved`);
   });
 
-  initAdmin(async (client) => {
-    sb = client;
+  initAdmin(async (client, e) => {
+    sb = client; env = e;
     if (!running) { cands = []; list.replaceChildren(); head.hidden = true; paint(); }
   });
 </script>

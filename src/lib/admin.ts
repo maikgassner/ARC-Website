@@ -230,3 +230,8 @@ export async function toAvatar(file: Blob, size = 800): Promise<Blob> {
   }
   return new Promise((res, rej) => out.toBlob((b) => (b ? res(b) : rej(new Error('Could not read image'))), 'image/jpeg', 0.88));
 }
+
+// The website tools (fill / logo / import) use the admin-fill-from-website
+// edge function, which is only deployed on PROD — TEST lives in another
+// Supabase org.
+export const PROD_ONLY = 'Website tools only run on PROD — switch to PROD at the top (the edge function isn’t deployed on TEST).';
