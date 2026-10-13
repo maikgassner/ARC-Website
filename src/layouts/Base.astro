@@ -53,6 +53,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
           <a href="/support">Support</a>
         </nav>
       </div>
+      <!-- Provider identification (Liechtenstein ECG / EU e-commerce rules): name, address, email on every page. -->
+      <p class="wrap imprint">Arc is operated by {SITE.operator} · <a href={`mailto:${SITE.supportEmail}`}>{SITE.supportEmail}</a></p>
     </footer>
   </body>
 </html>
@@ -71,4 +73,6 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
   .foot { border-top: 1px solid var(--border); margin-top: 64px; }
   .foot-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-block: 28px; color: var(--fg-3); font-size: 0.9rem; }
   .foot nav a { font-size: 0.9rem; }
+  .imprint { margin: -12px 0 0; padding-bottom: 24px; font-size: 0.8rem; color: var(--fg-3); }
+  .imprint a { color: var(--fg-3); }
 </style>

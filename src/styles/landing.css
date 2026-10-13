@@ -471,3 +471,7 @@ h1, h2, h3, p { margin: 0; }
   .waitlist-form input { flex: none; width: 100%; text-align: center; }
   .waitlist-form button { width: 100%; }
 }
+
+/* Provider identification under the footer */
+.imprint { max-width: var(--max); margin: -8px auto 0; padding: 0 clamp(8px, 2vw, 24px) 20px; font-size: 13px; color: var(--fg-2); }
+.imprint a { color: var(--fg-2); }
