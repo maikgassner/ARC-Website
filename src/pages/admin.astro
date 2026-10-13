@@ -21,7 +21,15 @@ import AdminShell from '../layouts/AdminShell.astro';
         <button type="button" class="tile" role="tab" data-filter="edits">
           <span class="tile-num" data-count="edits">0</span><span class="tile-label">Edits</span>
         </button>
+        <button type="button" class="tile" role="tab" data-filter="reports">
+          <span class="tile-num" data-count="reports">0</span><span class="tile-label">Reports</span>
+        </button>
       </div>
+
+      <section data-section="reports">
+        <h2>Reports</h2>
+        <div class="stack" data-list="reports"></div>
+      </section>
 
       <section data-section="photos">
         <h2>Photos</h2>
@@ -46,7 +54,7 @@ import AdminShell from '../layouts/AdminShell.astro';
 
 <style>
   /* ---------- Tiles ---------- */
-  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 8px; }
+  .tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-top: 8px; }
   .tile {
     display: grid; gap: 2px; text-align: left; cursor: pointer; padding: 16px 18px; border-radius: 18px;
     border: 2px solid transparent; background: var(--surface); box-shadow: var(--shadow); color: var(--fg);
@@ -57,6 +65,7 @@ import AdminShell from '../layouts/AdminShell.astro';
   .tile-num { font-size: 2rem; font-weight: 800; line-height: 1.1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
   .tile-label { font-size: .85rem; font-weight: 700; color: var(--fg-3); }
   .tile.has-items .tile-num { color: var(--action); }
+  @media (max-width: 860px) { .tiles { grid-template-columns: repeat(3, 1fr); } }
   @media (max-width: 640px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
 
   /* ---------- Sections ---------- */
@@ -106,6 +115,11 @@ import AdminShell from '../layouts/AdminShell.astro';
   :global(.changes .to) { color: var(--fg); font-weight: 600; }
 
   :global(.actions) { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 2px; }
+  :global(.actions.three) { grid-template-columns: 1fr 1fr 1fr; }
+  :global(.actions .neutral) { border: 1.5px solid var(--border); background: var(--surface); color: var(--fg-2); }
+  :global(.actions .neutral:hover) { border-color: var(--fg-3); color: var(--fg); }
+  :global(.quote) { margin: 0; padding: 10px 12px; border-left: 3px solid var(--border); background: var(--bg); border-radius: 0 12px 12px 0; font-size: .92rem; color: var(--fg-2); white-space: pre-wrap; }
+  :global(.hidden-badge) { justify-self: start; font-size: .7rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 4px 10px; border-radius: 999px; background: var(--no-tint); color: var(--no); }
   :global(.actions button) {
     display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;
     font: 800 .9rem var(--font); padding: 11px 12px; border-radius: 999px; transition: background .15s, transform .1s, opacity .15s;
@@ -124,14 +138,14 @@ import AdminShell from '../layouts/AdminShell.astro';
   import type { SupabaseClient } from '@supabase/supabase-js';
   import { el, add, svgIcon as svg, photoUrl, openLightbox, toast, initAdmin, showError, type Env } from '../lib/admin';
 
-  type List = 'photos' | 'creates' | 'edits';
+  type List = 'photos' | 'creates' | 'edits' | 'reports';
 
   const $ = <T extends Element>(sel: string) => document.querySelector(sel) as T;
   const $$ = <T extends Element>(sel: string) => Array.from(document.querySelectorAll(sel)) as T[];
   const allClear = $<HTMLElement>('[data-allclear]');
 
   let filter: 'all' | List = 'all';
-  let counts: Record<List, number> = { photos: 0, creates: 0, edits: 0 };
+  let counts: Record<List, number> = { photos: 0, creates: 0, edits: 0, reports: 0 };
   let sb: SupabaseClient;
   let env: Env = 'prod';
 
@@ -233,13 +247,46 @@ import AdminShell from '../layouts/AdminShell.astro';
     return card;
   }
 
+  // A report: who reported whom, why, the post/comment text, and whether the
+  // content is already auto-hidden (2+ reporters). Resolving one resolves all
+  // open reports on the same target (admin_resolve_report).
+  const REASON: Record<string, string> = { spam: 'Spam', harassment: 'Harassment', fake: 'Fake / impersonation', inappropriate: 'Inappropriate content', safety: 'Safety-relevant false claim', other: 'Other' };
+  function reportCard(r: any) {
+    const card = el('div', { class: 'mod-card' });
+    const target = r.comment_id ? 'Comment' : r.post_id ? 'Post' : 'Person';
+    const text = r.comment_body ?? r.post_body;
+    const resolve = async (action: 'dismiss' | 'remove' | 'actioned', label: string, btns: HTMLButtonElement[]) => {
+      if (action === 'remove' && !confirm(`Delete this ${target.toLowerCase()} for everyone?`)) return;
+      btns.forEach((b) => (b.disabled = true));
+      const { error } = await sb.rpc('admin_resolve_report', { p_id: r.id, p_action: action });
+      if (error) { btns.forEach((b) => (b.disabled = false)); toast(`Failed: ${error.message}`); return; }
+      toast(`${label} · ${r.reported || 'report'}`);
+      card.classList.add('leaving');
+      setTimeout(() => { card.remove(); load(); }, 300);
+    };
+    const dismiss = el('button', { class: 'neutral', type: 'button' }, svg('M5 12.5l4.5 4.5L19 7.5'), 'Dismiss') as HTMLButtonElement;
+    const remove = el('button', { class: 'reject', type: 'button' }, svg('M6 6l12 12M18 6L6 18'), text != null ? 'Remove content' : 'Mark actioned') as HTMLButtonElement;
+    dismiss.onclick = () => resolve('dismiss', '✓ Dismissed', [dismiss, remove]);
+    remove.onclick = () => resolve(text != null ? 'remove' : 'actioned', text != null ? '✕ Removed' : '✓ Marked actioned', [dismiss, remove]);
+    add(card,
+      el('span', { class: 'kind tunnel', textContent: `${target} · ${REASON[r.reason] ?? r.reason}` }),
+      r.hidden && el('span', { class: 'hidden-badge', textContent: `Hidden automatically · ${r.report_count} reports` }),
+      el('h3', { textContent: r.reported || 'Unknown user' }),
+      el('p', { class: 'meta', textContent: `Reported by ${r.reporter || 'unknown'} · ${when(r.created_at)}${r.report_count > 1 ? ` · ${r.report_count} people reported this` : ''}` }),
+      text != null && el('p', { class: 'quote', textContent: text }),
+      r.details && el('p', { class: 'note', textContent: `“${r.details}”` }),
+      el('div', { class: 'actions' }, dismiss, remove),
+    );
+    return card;
+  }
+
   function render(list: List, items: any[], make: (x: any) => HTMLElement) {
     const box = $<HTMLElement>(`[data-list="${list}"]`);
     box.replaceChildren(...(items.length ? items.map(make) : [el('p', { class: 'empty', textContent: 'Nothing pending here.' })]));
   }
 
   function updateCounts() {
-    const total = counts.photos + counts.creates + counts.edits;
+    const total = counts.photos + counts.creates + counts.edits + counts.reports;
     const all: Record<string, number> = { ...counts, all: total };
     for (const [k, n] of Object.entries(all)) {
       $<HTMLElement>(`[data-count="${k}"]`).textContent = String(n);
@@ -253,10 +300,11 @@ import AdminShell from '../layouts/AdminShell.astro';
     photos: 'No photos waiting for approval. Go jump.',
     creates: 'No new dropzones or tunnels to review. Go jump.',
     edits: 'No edit suggestions to review. Go jump.',
+    reports: 'No open reports. Go jump.',
   };
 
   function applyFilter() {
-    const shown = filter === 'all' ? counts.photos + counts.creates + counts.edits : counts[filter];
+    const shown = filter === 'all' ? counts.photos + counts.creates + counts.edits + counts.reports : counts[filter];
     $$<HTMLElement>('[data-filter]').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.filter === filter)));
     // Empty sections are always hidden; when the current view is empty, the
     // same "All clear" screen shows for every filter.
@@ -276,7 +324,8 @@ import AdminShell from '../layouts/AdminShell.astro';
     render('photos', data.photos, photoCard);
     render('creates', data.creates, createCard);
     render('edits', data.edits, editCard);
-    counts = { photos: data.photos.length, creates: data.creates.length, edits: data.edits.length };
+    render('reports', data.reports ?? [], reportCard);
+    counts = { photos: data.photos.length, creates: data.creates.length, edits: data.edits.length, reports: (data.reports ?? []).length };
     updateCounts();
   }
 
@@ -294,6 +343,10 @@ import AdminShell from '../layouts/AdminShell.astro';
         note: 'Opened this season, weekends only.', photo_paths: ['/img/landing/events.jpg', '/img/landing/dz-weather.jpg'], created_at: now, submitter: 'Marco Rossi' }],
       edits: [{ source: 'dz_edit_submissions', id: '4', location: 'Skydive Zürich', note: 'New prices since September',
         changes: { altitude_ft: { from: 12000, to: 13000 }, facilities: { from: ['Bar'], to: ['Bar', 'Packing area'] } }, created_at: now, submitter: 'Sara K.' }],
+      reports: [
+        { id: 'r1', reason: 'harassment', details: 'Keeps insulting people in the comments.', created_at: now, post_id: 'p1', comment_id: null, reporter: 'Lena Frei', reported: 'Tom Berger', post_body: 'lol you call that a track? my grandma flies better 🙄', comment_body: null, hidden: true, report_count: 2 },
+        { id: 'r2', reason: 'fake', details: null, created_at: now, post_id: null, comment_id: null, reporter: 'Marco Rossi', reported: 'Fake Account', post_body: null, comment_body: null, hidden: false, report_count: 1 },
+      ],
     };
     return { rpc: async (fn: string) => ({ data: fn === 'admin_moderation_queue' ? queue : null, error: null }) } as any;
   }
