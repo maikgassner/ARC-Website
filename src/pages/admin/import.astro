@@ -1,5 +1,5 @@
 ---
-// Bulk-add dropzones: OpenStreetMap (Overpass) is used only as a discovery
+// Bulk-add dropzones and wind tunnels (sport=indoor_skydiving): OpenStreetMap (Overpass) is used only as a discovery
 // list of candidates — names + websites, queried live, never stored. Each
 // selected candidate's own website then goes through the same
 // admin-fill-from-website edge function as the editor's "Fill from website",
@@ -8,7 +8,7 @@
 // community / admin, since they change and drafts get them wrong more often.
 import AdminShell from '../../layouts/AdminShell.astro';
 ---
-<AdminShell title="Import" sub="Find dropzones that aren’t in Arc yet and draft them from their own websites." active="import">
+<AdminShell title="Import" sub="Find dropzones and wind tunnels that aren’t in Arc yet and draft them from their own websites." active="import">
   <div class="toolbar">
     <select data-region aria-label="Region">
       <option value="europe">Europe</option>
@@ -23,7 +23,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     <span class="grow"></span>
     <button type="button" class="primary-btn small" data-import disabled>Import selected</button>
   </div>
-  <p class="hint" data-summary>Candidates come from OpenStreetMap (sport = skydiving / parachuting). Places already in Arc — same name, same website or within 2 km — are skipped. Only candidates with a website can be drafted.</p>
+  <p class="hint" data-summary>Candidates come from OpenStreetMap (sport = skydiving / parachuting; indoor skydiving = wind tunnel). Places already in Arc — same name, same website or within 2 km — are skipped. Only candidates with a website can be drafted.</p>
   <div class="cand-head" data-cand-head hidden>
     <label><input type="checkbox" data-all> Select all with a website</label>
     <span data-progress></span>
@@ -45,6 +45,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     padding: 12px 14px; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow);
   }
   :global(.cand.off) { opacity: .5; }
+  :global(.cand .tag) { margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: #eef1f3; color: #54626c; font-size: .75rem; font-weight: 700; vertical-align: 2px; }
   :global(.cand strong) { display: block; }
   :global(.cand small) { display: block; color: var(--fg-3); font-size: .82rem; word-break: break-all; }
   :global(.cand .state) { font-size: .85rem; font-weight: 700; color: var(--fg-3); text-align: right; max-width: 320px; }
@@ -74,7 +75,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
   const FT_PER_M = 1 / 0.3048;
   const PARALLEL = 3;
 
-  type Cand = { id: string; name: string; lat: number; lng: number; website: string; host: string; town: string; dup?: string; state?: string; err?: boolean };
+  type Kind = 'dz' | 'tunnel';
+  type Cand = { id: string; kind: Kind; name: string; lat: number; lng: number; website: string; host: string; town: string; dup?: string; state?: string; err?: boolean };
 
   const $ = <T extends Element>(sel: string) => document.querySelector(sel) as T;
   const list = $<HTMLElement>('[data-cands]');
@@ -140,7 +142,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
       cands = [...best.values()].map(({ e }) => {
         const t = e.tags ?? {};
         const c: Cand = {
-          id: `${e.type}${e.id}`, name: t.name || hostOf(e.website), lat: e.lat, lng: e.lon,
+          id: `${e.type}${e.id}`, kind: /indoor/.test(t.sport ?? '') ? 'tunnel' : 'dz', name: t.name || hostOf(e.website), lat: e.lat, lng: e.lon,
           website: e.website ? (/^https?:/i.test(e.website) ? e.website : `https://${e.website}`) : '',
           host: hostOf(e.website), town: [t['addr:city'], t['addr:country']].filter(Boolean).join(', '),
         };
@@ -169,7 +171,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
       return el('div', { class: `cand${can(c) || c.state ? '' : ' off'}` },
         box,
         el('div', {},
-          el('strong', { textContent: c.name }),
+          el('strong', {}, c.name, c.kind === 'tunnel' ? el('span', { class: 'tag', textContent: 'Tunnel' }) : ''),
           el('small', {}, c.website ? el('a', { href: c.website, target: '_blank', rel: 'noopener', textContent: c.host }) : '', c.town ? ` · ${c.town}` : '')),
         el('span', { class: `state${c.state ? (c.err ? ' err' : ' ok') : ''}`, textContent: state }));
     }));
@@ -189,18 +191,18 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
   // Prefer the address from the place's own site (geocoded like the editor
   // does); the OSM pin is only the fallback when that fails or lands far away.
-  async function geocode(address: string): Promise<{ lat: number; lng: number; country?: string } | null> {
+  async function geocode(address: string): Promise<{ lat: number; lng: number; country?: string; city?: string } | null> {
     try {
       const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(address)}&limit=1&lang=en`);
       const f = res.ok ? (await res.json()).features?.[0] : null;
-      return f ? { lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], country: f.properties?.country } : null;
+      return f ? { lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], country: f.properties?.country, city: f.properties?.city ?? f.properties?.town ?? f.properties?.village } : null;
     } catch { return null; }
   }
 
-  async function importOne(c: Cand, taken: Set<string>) {
+  async function importOne(c: Cand, taken: Record<Kind, Set<string>>) {
     const set = (s: string, err = false) => { c.state = s; c.err = err; render(); };
     set('Reading website…');
-    const { data, error } = await sb.functions.invoke('admin-fill-from-website', { body: { url: c.website, kind: 'dz' } });
+    const { data, error } = await sb.functions.invoke('admin-fill-from-website', { body: { url: c.website, kind: c.kind } });
     if (error || !data?.draft) {
       let msg = error?.message ?? 'No draft came back.';
       try { msg = (await (error as any)?.context?.json?.())?.error ?? msg; } catch {}
@@ -208,25 +210,30 @@ import AdminShell from '../../layouts/AdminShell.astro';
     }
     const d = data.draft;
     const name = (d.name || c.name).trim();
-    if (taken.has(norm(name))) return set(`Skipped — “${name}” already exists`, true);
+    if (taken[c.kind].has(norm(name))) return set(`Skipped — “${name}” already exists`, true);
 
-    let pin = { lat: c.lat, lng: c.lng }, country = d.country || '';
+    let pin = { lat: c.lat, lng: c.lng }, country = d.country || '', city = '';
     if (d.address) {
       const g = await geocode(d.address);
-      if (g && km(g, c) < 30) { pin = g; country ||= g.country ?? ''; }
+      if (g && km(g, c) < 30) { pin = g; country ||= g.country ?? ''; city = g.city ?? ''; }
     }
     if (!country) country = (await reverseCountry(pin)) ?? '';
 
-    const payload = {
+    // Tunnels: same basics plus the chamber specs; prices stay empty like the DZ ones.
+    const payload = c.kind === 'tunnel' ? {
+      name, lat: pin.lat, lng: pin.lng, location: d.location || [city, country].filter(Boolean).join(', ') || null,
+      website: d.website || c.website, phone: d.phone || null, description: d.description || null,
+      diameter: d.diameter || null, height: d.height || null, max_speed: d.max_speed || null, facilities: [],
+    } : {
       name, lat: pin.lat, lng: pin.lng, country: country || null,
       address: d.address || null, website: d.website || c.website, phone: d.phone || null,
       altitude_ft: d.altitude_m ? Math.round(d.altitude_m * FT_PER_M) : null,
       aircraft: d.aircraft?.length ? d.aircraft.join(', ') : null,
       description: d.description || null, facilities: [], stay: [], webcams: [],
     };
-    const { error: saveErr } = await sb.rpc('admin_save_location', { p_kind: 'dz', p_original_name: null, p_data: payload });
+    const { error: saveErr } = await sb.rpc('admin_save_location', { p_kind: c.kind, p_original_name: null, p_data: payload });
     if (saveErr) return set(saveErr.message.includes('duplicate key') ? `Skipped — “${name}” already exists` : `Save failed: ${saveErr.message}`, true);
-    taken.add(norm(name));
+    taken[c.kind].add(norm(name));
     set(`✓ Added as “${name}”${d.notes ? ` — ${d.notes}` : ''}`);
   }
 
@@ -239,10 +246,10 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
   importBtn.addEventListener('click', async () => {
     const queue = cands.filter((c) => picked.has(c.id) && !c.dup && c.website && !c.state);
-    if (!queue.length || !confirm(`Draft and add ${queue.length} dropzone${queue.length > 1 ? 's' : ''} to the database? Each takes 10–30 seconds; keep this tab open.`)) return;
+    if (!queue.length || !confirm(`Draft and add ${queue.length} place${queue.length > 1 ? 's' : ''} to the database? Each takes 10–30 seconds; keep this tab open.`)) return;
     running = true; findBtn.disabled = true; render();
-    const { data } = await sb.from('dropzones').select('name');
-    const taken = new Set((data ?? []).map((p) => norm(p.name)));
+    const [dz, tu] = await Promise.all([sb.from('dropzones').select('name'), sb.from('tunnels').select('name')]);
+    const taken = { dz: new Set((dz.data ?? []).map((p) => norm(p.name))), tunnel: new Set((tu.data ?? []).map((p) => norm(p.name))) };
     const total = queue.length;
     let done = 0;
     const worker = async () => {
