@@ -954,7 +954,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
       v[key] = val; n++;
     };
     if (!ed.original) put('name', d.name);
-    put('website', d.website ?? url);
+    put('website', d.website || url);
     put('phone', d.phone);
     put('description', d.description);
     put('facilities', d.facilities);
