@@ -96,6 +96,16 @@ import AdminShell from '../../layouts/AdminShell.astro';
   const OVERPASS = ['https://overpass.kumi.systems/api/interpreter', 'https://overpass-api.de/api/interpreter'];
   const FT_PER_M = 1 / 0.3048;
   const PARALLEL = 3;
+  // Removed after review (2026-10-13): tandem-only operators and places that
+  // aren't dropzones. Skipped before the website is even read; the draft's
+  // `category` catches new ones.
+  const NOT_FOR_ARC = new Set(['2dive.fr', 'accel-air.com', 'atlasparachutisme.com', 'fsgrefrath.de', 'mytandem.fr',
+    'skydive-nuggets.de', 'skydiveseven.pt', 'parachutismelorraine.fr', 'bassella.com', 'rennefeld.de', 'paraservice.dk',
+    'riggerloftet.dk', 'orduparagliding.com']);
+  const SKIP_REASON: Record<string, string> = {
+    tandem_only: 'Skipped — tandem only, nothing for fun jumpers',
+    not_skydiving: 'Skipped — not a dropzone',
+  };
   // Paragliding sites share the parachuting tag in OSM — never import them.
   const PARAGLIDING = /paraglid|parapente|gleitschirm|parapendio|yama[cç] para/i;
 
@@ -160,6 +170,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
         const lat = e.lat ?? e.center?.lat, lng = e.lon ?? e.center?.lon;
         if (lat == null || (!t.name && !website)) continue;
         if (PARAGLIDING.test([t.sport, t.name, t.description, website].join(' '))) continue;
+        if (NOT_FOR_ARC.has(hostOf(website))) continue;
         const key = hostOf(website) || `osm-${e.type}${e.id}`;
         const rank = RANK(t);
         if (!best.has(key) || rank > best.get(key)!.rank) best.set(key, { e: { ...e, lat, lon: lng, website }, rank });
@@ -177,7 +188,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
       const fresh = cands.filter((c) => !c.dup && c.website);
       fresh.forEach((c) => picked.add(c.id));
-      summary.textContent = `${cands.length} candidates · ${cands.filter((c) => c.dup).length} already in Arc · ${cands.filter((c) => !c.dup && !c.website).length} without a website · ${fresh.length} can be drafted. Untick anything that isn’t a dropzone (shops, clubs without their own airfield, closed places).`;
+      summary.textContent = `${cands.length} candidates · ${cands.filter((c) => c.dup).length} already in Arc · ${cands.filter((c) => !c.dup && !c.website).length} without a website · ${fresh.length} can be drafted. Tandem-only operators and places that aren’t dropzones are skipped automatically after reading their site — still untick anything obvious.`;
       head.hidden = false;
       render();
     } catch (err: any) {
@@ -234,6 +245,10 @@ import AdminShell from '../../layouts/AdminShell.astro';
       return set(msg, true);
     }
     const d = data.draft;
+    if (SKIP_REASON[d.category]) return set(SKIP_REASON[d.category], true);
+    // The site knows better than the OSM tag whether it's a tunnel.
+    if (d.category === 'wind_tunnel') c.kind = 'tunnel';
+    else if (d.category === 'dropzone') c.kind = 'dz';
     const name = (d.name || c.name).trim();
     if (PARAGLIDING.test([name, d.description, d.website].join(' '))) return set('Skipped — paragliding, not skydiving', true);
     if (taken[c.kind].has(norm(name))) return set(`Skipped — “${name}” already exists`, true);

@@ -960,7 +960,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
         return;
       }
       const n = await applyDraft(data.draft, url);
-      status.textContent = `Filled ${n} field${n === 1 ? '' : 's'} from ${data.pages?.length ?? 1} page${data.pages?.length === 1 ? '' : 's'}.${data.draft.notes ? ` Note: ${data.draft.notes}` : ''} Please check everything before saving.`;
+      const warn = { tandem_only: '⚠️ The site looks tandem-only (nothing for fun jumpers). ', not_skydiving: '⚠️ This doesn’t look like a dropzone or tunnel. ', wind_tunnel: editing!.kind === 'dz' ? '⚠️ The site looks like a wind tunnel — switch the type? ' : '', dropzone: editing!.kind === 'tunnel' ? '⚠️ The site looks like a dropzone — switch the type? ' : '' }[data.draft.category as string] ?? '';
+      status.textContent = `${warn}Filled ${n} field${n === 1 ? '' : 's'} from ${data.pages?.length ?? 1} page${data.pages?.length === 1 ? '' : 's'}.${data.draft.notes ? ` Note: ${data.draft.notes}` : ''} Please check everything before saving.`;
       toast(`✓ Filled ${n} fields — please review`);
     });
     return el('div', { class: 'field' }, el('div', { class: 'inline' }, input, btn), status);
