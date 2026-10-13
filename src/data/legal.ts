@@ -8,7 +8,7 @@ export const PRIVACY: LegalSection[] = [
   {
     heading: 'Who we are',
     paragraphs: [
-      'Arc is a logbook and social app for skydivers, operated by Michael Gassner, Tristelstrasse 14, 9497 Triesenberg, Liechtenstein, who is responsible for your data (the controller). For anything about your data, write to maik.gassner@gmail.com.',
+      'Arc is a logbook and social app for skydivers, operated by Michael Gassner, Tristelstrasse 14, 9497 Triesenberg, Liechtenstein, who is responsible for your data (the controller). For anything about your data, write to info@logwitharc.app.',
     ],
   },
   {
@@ -66,7 +66,7 @@ export const PRIVACY: LegalSection[] = [
     bullets: [
       'logwitharc.app is hosted by Vercel, which keeps short-lived server logs (such as IP address and browser) to deliver and protect the site. USA.',
       'Beta sign-up: the email address you enter is stored in our database so we can invite you to the beta. Write to us to have it removed.',
-      'Contact form: your name, email and message are sent through Web3Forms to our inbox (maik.gassner@gmail.com) so we can reply.',
+      'Contact form: your name, email and message are sent through Web3Forms to our inbox so we can reply.',
     ],
   },
   {
@@ -84,7 +84,7 @@ export const PRIVACY: LegalSection[] = [
   {
     heading: 'Your rights',
     paragraphs: [
-      'You can access, correct, export and delete your data, withdraw consent, object to processing, and complain to a data protection authority — in Liechtenstein the Datenschutzstelle (DSS), in Switzerland the FDPIC, in the EU the authority of your country. Most of this you can do in the app; for anything else write to maik.gassner@gmail.com.',
+      'You can access, correct, export and delete your data, withdraw consent, object to processing, and complain to a data protection authority — in Liechtenstein the Datenschutzstelle (DSS), in Switzerland the FDPIC, in the EU the authority of your country. Most of this you can do in the app; for anything else write to info@logwitharc.app.',
     ],
   },
   {
@@ -100,7 +100,7 @@ export const PRIVACY: LegalSection[] = [
 export const TERMS: LegalSection[] = [
   {
     heading: 'Who provides Arc',
-    paragraphs: ['Arc is provided by Michael Gassner, Tristelstrasse 14, 9497 Triesenberg, Liechtenstein. Contact: maik.gassner@gmail.com.'],
+    paragraphs: ['Arc is provided by Michael Gassner, Tristelstrasse 14, 9497 Triesenberg, Liechtenstein. Contact: info@logwitharc.app.'],
   },
   {
     heading: 'Scope of the service',
