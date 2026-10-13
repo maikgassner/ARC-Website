@@ -214,6 +214,10 @@ import AdminShell from '../../layouts/AdminShell.astro';
   :global(.profile-card) { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; }
   :global(.profile-card .avatar-preview) { width: 112px; height: 112px; border-radius: 26px; }
   :global(.avatar-empty) { width: 112px; height: 112px; border-radius: 26px; display: grid; place-items: center; background: var(--ink-100); color: var(--fg-3); font-size: .78rem; font-weight: 700; text-align: center; padding: 8px; }
+  :global(.logo-opts) { display: flex; gap: 10px; flex-wrap: wrap; }
+  :global(.logo-opt) { padding: 0; border: 0; background: none; cursor: pointer; line-height: 0; border-radius: 50%; transition: transform .15s; }
+  :global(.logo-opt:hover) { transform: scale(1.06); }
+  :global(.logo-opt img) { width: 64px; height: 64px; border-radius: 50%; box-shadow: 0 0 0 1px var(--border); }
   :global(.profile-actions) { display: flex; gap: 8px; flex-wrap: wrap; }
   :global(.profile-actions .upload) { min-height: 0; padding: 10px 16px; border-radius: 999px; }
   :global(.media-item.pending img) { opacity: .75; }
@@ -909,9 +913,9 @@ import AdminShell from '../../layouts/AdminShell.astro';
     return box;
   }
 
-  async function uploadImage(file: File, folder: string, avatar = false): Promise<string> {
+  async function uploadImage(file: Blob, folder: string, mode: 'photo' | 'avatar' | 'ready' = 'photo'): Promise<string> {
     const { data: u } = await sb.auth.getUser();
-    const blob = avatar ? await toAvatar(file) : await toJpeg(file);
+    const blob = mode === 'ready' ? file : mode === 'avatar' ? await toAvatar(file) : await toJpeg(file as File);
     const path = `${u.user?.id}/admin/${folder}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.jpg`;
     const { error } = await sb.storage.from(BUCKET).upload(path, blob, { contentType: 'image/jpeg' });
     if (error) throw error;
@@ -1018,23 +1022,58 @@ import AdminShell from '../../layouts/AdminShell.astro';
   function profileEl(): HTMLElement {
     const vals = editing!.values;
     const box = el('div', { class: 'profile-card' });
+    // "Find logo": same logo search as /admin/import, options already squared.
+    let logos: { blob: Blob; url: string }[] = [];
+    let logoStatus = '';
+    const findLogo = async () => {
+      const url = String(vals.website ?? '').trim();
+      if (!url) { toast('Add the website first (Contact section or Quick fill)'); return; }
+      logos.forEach((l) => URL.revokeObjectURL(l.url));
+      logos = []; logoStatus = 'Looking for the logo on the website…'; paint();
+      const { data, error } = await sb.functions.invoke('admin-fill-from-website', { body: { url, mode: 'logo' } });
+      if (error) {
+        let msg = error.message;
+        try { msg = (await (error as any).context?.json?.())?.error ?? msg; } catch {}
+        logoStatus = `Couldn’t search: ${msg}`; paint(); return;
+      }
+      for (const l of data?.logos ?? []) {
+        try {
+          const blob = await toAvatar(new Blob([Uint8Array.from(atob(l.data), (c) => c.charCodeAt(0))], { type: l.type }));
+          logos.push({ blob, url: URL.createObjectURL(blob) });
+        } catch { /* undecodable image */ }
+      }
+      logoStatus = logos.length ? 'Click one to use it:' : 'No logo found on the home page.';
+      paint();
+    };
+    const useLogo = async (l: { blob: Blob }) => {
+      toast('Uploading…');
+      try {
+        setVal('avatar_path', await uploadImage(l.blob, `${slug(vals.name || 'place')}-avatar`, 'ready'));
+        paint();
+        toast('✓ Profile photo ready — save to apply');
+      } catch (e: any) { toast(`Upload failed: ${e.message}`); }
+    };
     const paint = () => {
       const preview = vals.avatar_path
         ? el('img', { class: 'avatar-preview', src: photoUrl(env, vals.avatar_path), alt: 'Profile photo', onclick: () => openLightbox(photoUrl(env, vals.avatar_path)) })
         : el('div', { class: 'avatar-empty', textContent: 'No profile photo' });
       box.replaceChildren(preview, el('div', { class: 'field' },
-        el('p', { class: 'hint', style: 'margin:0', textContent: 'The round icon on the map and at the top of the place page. Use the logo or a photo — it’s made square automatically (photos cropped to the centre, transparent logos put on white). Other pictures go in the gallery below.' }),
+        el('p', { class: 'hint', style: 'margin:0', textContent: 'The round icon on the map and at the top of the place page. Use the logo or a photo — it’s made square automatically (photos cropped to the centre, logos fitted on white). “Find logo on website” looks it up for you. Other pictures go in the gallery below.' }),
         el('div', { class: 'profile-actions' },
           dropZone(vals.avatar_path ? 'Replace profile photo' : 'Upload profile photo', false, async ([file]) => {
             toast('Uploading…');
             try {
-              setVal('avatar_path', await uploadImage(file, `${slug(vals.name || 'place')}-avatar`, true));
+              setVal('avatar_path', await uploadImage(file, `${slug(vals.name || 'place')}-avatar`, 'avatar'));
               paint();
               toast('✓ Profile photo ready — save to apply');
             } catch (e: any) { toast(`Upload failed: ${e.message}`); }
           }),
+          el('button', { type: 'button', class: 'mini-btn', textContent: 'Find logo on website', onclick: findLogo }),
           vals.avatar_path && el('button', { type: 'button', class: 'mini-btn', textContent: 'Remove', onclick: () => { setVal('avatar_path', null); paint(); } }),
         ),
+        logoStatus && el('p', { class: 'hint', style: 'margin:0', textContent: logoStatus }),
+        logos.length > 0 && el('div', { class: 'logo-opts' }, ...logos.map((l, i) =>
+          el('button', { type: 'button', class: 'logo-opt', title: 'Use this one', onclick: () => useLogo(l) }, el('img', { src: l.url, alt: `Logo option ${i + 1}` })))),
       ));
     };
     paint();
