@@ -1,0 +1,27 @@
+---
+import Base from '../layouts/Base.astro';
+import { SITE } from '../data/site';
+
+// Provider identification (Liechtenstein ECG Art. 5 / EU e-commerce rules):
+// reachable from every page via the footer link "Imprint".
+const lines = SITE.operator.split(', ');
+---
+<Base title="Imprint" description="Who operates Arc." noindex>
+  <article class="wrap narrow imprint-page">
+    <h1>Imprint</h1>
+    <p>Arc is operated by:</p>
+    <address>
+      {lines.map((l) => <>{l}<br /></>)}
+      <a href={`mailto:${SITE.supportEmail}`}>{SITE.supportEmail}</a>
+    </address>
+    <p>Responsible for the content of this website and the Arc app: {lines[0]}, address as above.</p>
+    <p>See also the <a href="/privacy">Privacy Policy</a> and the <a href="/terms">Terms</a>.</p>
+  </article>
+</Base>
+
+<style>
+  .imprint-page { padding-top: 48px; padding-bottom: 64px; }
+  .imprint-page h1 { font-size: clamp(2rem, 5vw, 2.6rem); font-weight: 800; }
+  .imprint-page p, .imprint-page address { color: var(--fg-2); }
+  .imprint-page address { font-style: normal; line-height: 1.7; margin: 8px 0 24px; }
+</style>
