@@ -239,7 +239,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   type Place = Record<string, any> & { name: string };
   type FieldType = 'text' | 'number' | 'textarea' | 'chips' | 'chipsText' | 'hours' | 'select' | 'address';
   type Field = { key: string; label: string; type: FieldType; placeholder?: string; hint?: string; suggest?: string[]; options?: [string, string][]; decimal?: boolean };
-  type Section = { title: string; wide?: boolean; fields: Field[]; extra?: 'webcams' | 'profile' | 'gallery' };
+  type Section = { title: string; wide?: boolean; fields: Field[]; extra?: 'webcams' | 'profile' | 'gallery' | 'fill' };
 
   const $ = <T extends Element>(sel: string) => document.querySelector(sel) as T;
   const $$ = <T extends Element>(sel: string) => Array.from(document.querySelectorAll(sel)) as T[];
@@ -259,10 +259,12 @@ import AdminShell from '../../layouts/AdminShell.astro';
     AU: 'AUD', NZ: 'NZD', CA: 'CAD', ZA: 'ZAR', AE: 'AED', TH: 'THB', ...Object.fromEntries(EURO.map((c) => [c, 'EUR'])),
   };
 
+  const FILL: Section = { title: 'Quick fill', wide: true, extra: 'fill', fields: [] };
   const PROFILE: Section = { title: 'Profile photo', wide: true, extra: 'profile', fields: [] };
   const GALLERY: Section = { title: 'Gallery', wide: true, extra: 'gallery', fields: [] };
 
   const DZ_SECTIONS: Section[] = [
+    FILL,
     PROFILE,
     { title: 'Basics', fields: [
       { key: 'name', label: 'Name', type: 'text', placeholder: 'Skydive Example' },
@@ -299,6 +301,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   ];
 
   const TUNNEL_SECTIONS: Section[] = [
+    FILL,
     PROFILE,
     { title: 'Basics', fields: [
       { key: 'name', label: 'Name', type: 'text', placeholder: 'Windwerk Example' },
@@ -555,6 +558,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     fieldsBox.replaceChildren(...sectionsOf(editing!.kind).map((sec) => {
       const card = el('section', { class: `fcard${sec.wide ? ' wide' : ''}` }, el('h3', { textContent: sec.title }));
       for (const f of sec.fields) add(card, fieldEl(f));
+      if (sec.extra === 'fill') add(card, fillEl());
       if (sec.extra === 'profile') add(card, profileEl());
       if (sec.extra === 'webcams') add(card, webcamsEl());
       if (sec.extra === 'gallery') add(card, galleryEl());
@@ -909,6 +913,85 @@ import AdminShell from '../../layouts/AdminShell.astro';
     zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
     zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('drag'); take(e.dataTransfer?.files); });
     return zone;
+  }
+
+  // "Fill from website": the admin-fill-from-website edge function reads the
+  // place's site and returns a draft (Claude). Only EMPTY fields are filled,
+  // so nothing the admin typed is overwritten; the address goes through the
+  // same Photon lookup as typing it, which sets the pin and country.
+  function fillEl(): HTMLElement {
+    const vals = editing!.values;
+    const input = el('input', { type: 'url', value: vals.website ?? '', placeholder: 'https://… the dropzone’s or tunnel’s website' });
+    const status = el('p', { class: 'hint', textContent: 'Reads the site (home, contact, prices, info pages) and drafts the fields below. Empty fields only — check everything before saving.' });
+    const btn = el('button', { type: 'button', class: 'dark-btn small', textContent: 'Fill from website' });
+    btn.addEventListener('click', async () => {
+      const url = input.value.trim();
+      if (!url) { toast('Paste the website address first'); return; }
+      btn.disabled = true;
+      status.textContent = 'Reading the website… (10–30 seconds)';
+      const { data, error } = await sb.functions.invoke('admin-fill-from-website', { body: { url, kind: editing!.kind } });
+      btn.disabled = false;
+      if (error || !data?.draft) {
+        let msg = error?.message ?? 'No draft came back.';
+        try { msg = (await (error as any)?.context?.json?.())?.error ?? msg; } catch {}
+        status.textContent = `Couldn’t fill: ${msg}`;
+        return;
+      }
+      const n = await applyDraft(data.draft, url);
+      status.textContent = `Filled ${n} field${n === 1 ? '' : 's'} from ${data.pages?.length ?? 1} page${data.pages?.length === 1 ? '' : 's'}.${data.draft.notes ? ` Note: ${data.draft.notes}` : ''} Please check everything before saving.`;
+      toast(`✓ Filled ${n} fields — please review`);
+    });
+    return el('div', { class: 'field' }, el('div', { class: 'inline' }, input, btn), status);
+  }
+
+  async function applyDraft(d: any, url: string): Promise<number> {
+    const ed = editing!;
+    const v = ed.values;
+    let n = 0;
+    const empty = (x: any) => x == null || x === '' || (Array.isArray(x) && x.length === 0);
+    const put = (key: string, val: any) => {
+      if (empty(val) || !empty(v[key])) return;
+      v[key] = val; n++;
+    };
+    if (!ed.original) put('name', d.name);
+    put('website', d.website ?? url);
+    put('phone', d.phone);
+    put('description', d.description);
+    put('facilities', d.facilities);
+    put('hours_url', d.hours_url);
+    if (Array.isArray(d.hours_per_day) && d.hours_per_day.some((x: string) => x?.trim()) && empty(v.hours)) {
+      v.hours = serializeHours(d.hours_per_day.map((x: string) => x ?? ''));
+      v._showHours = true; n++;
+    }
+    if (ed.kind === 'dz') {
+      put('altitude_m', d.altitude_m);
+      put('aircraft', (d.aircraft ?? []).join(', ') || null);
+      put('guest_ticket_price', d.guest_ticket_price);
+      put('currency', d.currency);
+      put('stay', d.stay);
+      put('country', d.country);
+    } else {
+      put('location', d.location);
+      for (const k of ['diameter', 'height', 'max_speed', 'price_no_coach_regular', 'price_coach_regular', 'pricing_times_note']) put(k, d[k]);
+      put('currency', d.currency);
+    }
+    // Address → pin via the same lookup the address field uses.
+    if (d.address && (v.lat == null || v.lng == null)) {
+      try {
+        const hit = (await searchAddress(d.address))[0];
+        if (hit) {
+          v.lat = +hit.lat.toFixed(6); v.lng = +hit.lng.toFixed(6);
+          v._country = hit.p.country ?? ''; v._city = cityOf(hit.p);
+          if (ed.kind === 'dz') { if (empty(v.country) && hit.p.country) v.country = hit.p.country; }
+          else if (empty(v.location)) v.location = [v._city, v._country].filter(Boolean).join(', ');
+        }
+      } catch { /* pin stays empty — the admin picks the address by hand */ }
+      if (empty(v.address)) { v.address = d.address; n++; }
+    }
+    dirty = true;
+    paintHead();
+    renderEditor();
+    return n;
   }
 
   // Profile photo → avatar_path: the round icon on the map and at the top of
