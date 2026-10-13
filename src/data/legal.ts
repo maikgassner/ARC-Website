@@ -145,7 +145,7 @@ export const TERMS: LegalSection[] = [
       'false safety-relevant claims, such as a fabricated licence, jump count or signature',
     ],
     after: [
-      'You can report a person, post or comment and block anyone from their profile. We review reports within 24 hours, remove content that breaks these rules and can suspend or close the accounts involved.',
+      'You can report a person, post or comment and block anyone from their profile. We look at every report, usually within 24 hours, remove content that breaks these rules and can suspend or close the accounts involved.',
     ],
   },
   {
