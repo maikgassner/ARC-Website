@@ -29,6 +29,17 @@ import AdminShell from '../../layouts/AdminShell.astro';
     <span data-progress></span>
   </div>
   <div class="cands" data-cands></div>
+  <section class="logos">
+    <div class="toolbar">
+      <h2>Profile photos</h2>
+      <button type="button" class="ghost-btn" data-find-logos>Find logos</button>
+      <span class="grow"></span>
+      <button type="button" class="primary-btn small" data-save-logos disabled>Save selected</button>
+    </div>
+    <p class="hint" data-logo-summary>Looks for the logo on the website of every place without a profile photo and shows up to three options, already squared the way they’ll be saved. Click the one that fits — or “None”.</p>
+    <div class="cands" data-logo-list></div>
+  </section>
+
   <p class="osm">Candidate list © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a></p>
 </AdminShell>
 
@@ -52,6 +63,17 @@ import AdminShell from '../../layouts/AdminShell.astro';
   :global(.cand .state.ok) { color: var(--ok); }
   :global(.cand .state.err) { color: var(--no); font-weight: 600; }
   :global(.cand input[type="checkbox"]), .cand-head input { width: 18px; height: 18px; accent-color: var(--fg); }
+  .logos { margin-top: 48px; }
+  .logos h2 { margin: 0; font-size: 1.3rem; }
+  :global(.logo-row) { display: grid; grid-template-columns: minmax(160px, 1fr) auto; gap: 14px; align-items: center; padding: 12px 14px; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); }
+  :global(.logo-row small) { display: block; color: var(--fg-3); font-size: .82rem; }
+  :global(.logo-opts) { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  :global(.logo-opt) { padding: 3px; border-radius: 50%; border: 3px solid transparent; background: none; cursor: pointer; line-height: 0; }
+  :global(.logo-opt img) { width: 64px; height: 64px; border-radius: 50%; box-shadow: 0 0 0 1px var(--border); }
+  :global(.logo-opt[aria-pressed="true"]) { border-color: var(--fg); }
+  :global(.logo-none) { font: 700 .85rem var(--font); color: var(--fg-3); background: var(--ink-100); border: 3px solid transparent; border-radius: 999px; padding: 8px 14px; cursor: pointer; }
+  :global(.logo-none[aria-pressed="true"]) { border-color: var(--fg); color: var(--fg); }
+  @media (max-width: 640px) { :global(.logo-row) { grid-template-columns: 1fr; } }
   .osm { color: var(--fg-3); font-size: .8rem; margin-top: 24px; }
   .osm a { color: inherit; }
   @media (max-width: 640px) { :global(.cand) { grid-template-columns: auto 1fr; } :global(.cand .state) { grid-column: 2; text-align: left; } }
@@ -59,7 +81,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
 <script>
   import type { SupabaseClient } from '@supabase/supabase-js';
-  import { el, toast, initAdmin, showError } from '../../lib/admin';
+  import { el, toast, initAdmin, showError, toAvatar, BUCKET } from '../../lib/admin';
 
   // south, west, north, east — split so each Overpass query stays fast.
   const REGIONS: Record<string, [number, number, number, number][]> = {
@@ -274,6 +296,91 @@ import AdminShell from '../../layouts/AdminShell.astro';
   });
 
   findBtn.addEventListener('click', find);
+
+  // ---------- Profile photos from the places' own logos ----------
+  type LogoRow = { kind: Kind; name: string; website: string; opts: { blob: Blob; url: string }[]; pick: number; state?: string; err?: boolean };
+  const logoList = $<HTMLElement>('[data-logo-list]');
+  const logoSummary = $<HTMLElement>('[data-logo-summary]');
+  const findLogosBtn = $<HTMLButtonElement>('[data-find-logos]');
+  const saveLogosBtn = $<HTMLButtonElement>('[data-save-logos]');
+  let logoRows: LogoRow[] = [];
+  const slug = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'place';
+
+  function renderLogos() {
+    logoList.replaceChildren(...logoRows.map((r) => {
+      const opts = el('div', { class: 'logo-opts' });
+      if (r.state) opts.append(el('span', { class: `state ${r.err ? 'err' : 'ok'}`, textContent: r.state }));
+      else if (!r.opts.length) opts.append(el('span', { class: 'state', textContent: 'Searching…' }));
+      else {
+        r.opts.forEach((o, i) => opts.append(el('button', { type: 'button', class: 'logo-opt', 'aria-pressed': String(r.pick === i), onclick: () => { r.pick = i; renderLogos(); } }, el('img', { src: o.url, alt: `Option ${i + 1}` }))));
+        opts.append(el('button', { type: 'button', class: 'logo-none', 'aria-pressed': String(r.pick === -1), textContent: 'None', onclick: () => { r.pick = -1; renderLogos(); } }));
+      }
+      return el('div', { class: 'logo-row' },
+        el('div', {}, el('strong', { textContent: r.name }), el('small', {}, el('a', { href: r.website, target: '_blank', rel: 'noopener', textContent: hostOf(r.website) }), r.kind === 'tunnel' ? ' · Tunnel' : '')),
+        opts);
+    }));
+    const n = logoRows.filter((r) => !r.state && r.pick >= 0 && r.opts[r.pick]).length;
+    saveLogosBtn.textContent = `Save selected (${n})`;
+    saveLogosBtn.disabled = !n;
+  }
+
+  findLogosBtn.addEventListener('click', async () => {
+    findLogosBtn.disabled = true;
+    const [dz, tu] = await Promise.all([
+      sb.from('dropzones').select('name, website').is('avatar_path', null).not('website', 'is', null).order('name'),
+      sb.from('tunnels').select('name, website').is('avatar_path', null).not('website', 'is', null).order('name'),
+    ]);
+    if (dz.error || tu.error) { findLogosBtn.disabled = false; return showError((dz.error || tu.error)!.message); }
+    logoRows = [
+      ...(dz.data ?? []).map((p) => ({ kind: 'dz' as Kind, name: p.name, website: p.website, opts: [], pick: 0 })),
+      ...(tu.data ?? []).map((p) => ({ kind: 'tunnel' as Kind, name: p.name, website: p.website, opts: [], pick: 0 })),
+    ];
+    logoSummary.textContent = `Searching the websites of ${logoRows.length} places without a profile photo…`;
+    renderLogos();
+    const queue = [...logoRows];
+    const worker = async () => {
+      for (let r = queue.shift(); r; r = queue.shift()) {
+        try {
+          const { data, error } = await sb.functions.invoke('admin-fill-from-website', { body: { url: r.website, mode: 'logo' } });
+          if (error) throw error;
+          for (const l of data?.logos ?? []) {
+            try {
+              const bytes = Uint8Array.from(atob(l.data), (c) => c.charCodeAt(0));
+              const blob = await toAvatar(new Blob([bytes], { type: l.type }));
+              r.opts.push({ blob, url: URL.createObjectURL(blob) });
+            } catch { /* undecodable image — skip */ }
+          }
+          if (!r.opts.length) { r.state = 'No logo found'; r.err = true; }
+        } catch { r.state = 'Website didn’t answer'; r.err = true; }
+        renderLogos();
+      }
+    };
+    await Promise.all(Array.from({ length: 4 }, worker));
+    // Places with options first, so the ones to look at are together.
+    logoRows.sort((a, b) => Number(!!a.state) - Number(!!b.state) || a.name.localeCompare(b.name));
+    const found = logoRows.filter((r) => r.opts.length).length;
+    logoSummary.textContent = `Logos found for ${found} of ${logoRows.length} places. The first option is pre-selected — click another one or “None”, then save.`;
+    findLogosBtn.disabled = false;
+    renderLogos();
+  });
+
+  saveLogosBtn.addEventListener('click', async () => {
+    const todo = logoRows.filter((r) => !r.state && r.pick >= 0 && r.opts[r.pick]);
+    if (!todo.length || !confirm(`Save ${todo.length} profile photo${todo.length > 1 ? 's' : ''}?`)) return;
+    saveLogosBtn.disabled = findLogosBtn.disabled = true;
+    const { data: u } = await sb.auth.getUser();
+    for (const r of todo) {
+      const path = `${u.user?.id}/admin/${slug(r.name)}-avatar-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.jpg`;
+      const up = await sb.storage.from(BUCKET).upload(path, r.opts[r.pick].blob, { contentType: 'image/jpeg' });
+      const save = up.error ? null : await sb.rpc('admin_save_location', { p_kind: r.kind, p_original_name: r.name, p_data: { avatar_path: path } });
+      const err = up.error ?? save?.error;
+      r.state = err ? `Failed: ${err.message}` : '✓ Saved';
+      r.err = !!err;
+      renderLogos();
+    }
+    findLogosBtn.disabled = false;
+    toast(`✓ ${todo.filter((r) => !r.err).length} profile photos saved`);
+  });
 
   initAdmin(async (client) => {
     sb = client;

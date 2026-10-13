@@ -151,3 +151,82 @@ export function showError(message: string) {
       ? 'The admin functions are missing in this database — run the admin migrations (0087, 0089) here first.'
       : `Error: ${message}`;
 }
+
+// Any image file / blob → something drawable with its pixel size. SVG goes
+// through <img> (createImageBitmap can't decode it) at ~1200 px.
+async function loadDrawable(file: Blob): Promise<{ img: CanvasImageSource; w: number; h: number }> {
+  if (file.type === 'image/svg+xml') {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      const ratio = (img.naturalWidth || 1) / (img.naturalHeight || 1);
+      const w = ratio >= 1 ? 1200 : Math.round(1200 * ratio), h = ratio >= 1 ? Math.round(1200 / ratio) : 1200;
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d')!.drawImage(img, 0, 0, w, h);
+      return { img: c, w, h };
+    } finally { URL.revokeObjectURL(url); }
+  }
+  const bmp = await createImageBitmap(file);
+  return { img: bmp, w: bmp.width, h: bmp.height };
+}
+
+// Profile photos are shown round (map pin, place header), so they're always
+// stored as a filled square. Photos: centre crop. Logos — transparent
+// (PNG/WebP/SVG) or on a plain one-colour background (border all the same
+// colour) — get their margins trimmed and are scaled as big as fits inside
+// the circle, on white (transparent; Arc dark when the logo itself is almost
+// all white, so it doesn't vanish) or on their own background colour.
+export async function toAvatar(file: Blob, size = 800): Promise<Blob> {
+  const { img, w: W, h: H } = await loadDrawable(file);
+  const src = document.createElement('canvas');
+  src.width = W; src.height = H;
+  const sctx = src.getContext('2d', { willReadFrequently: true })!;
+  sctx.drawImage(img, 0, 0);
+  const { data } = sctx.getImageData(0, 0, W, H);
+  let x0 = W, y0 = H, x1 = -1, y1 = -1, transparent = false, lum = 0, opaque = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = (y * W + x) * 4, a = data[i + 3];
+    if (a < 250) transparent = true;
+    if (a > 10) {
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      if (a > 128) { lum += (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) / 255; opaque++; }
+    }
+  }
+  // No transparency: is the border one flat colour? Then it's a logo on a
+  // background — trim everything close to that colour.
+  let bg = transparent ? (opaque && lum / opaque > 0.85 ? '#292b2c' : '#fff') : '';
+  if (!transparent) {
+    const edge: number[] = [];
+    const step = Math.max(1, Math.floor((W + H) / 400));
+    for (let x = 0; x < W; x += step) edge.push(x, (H - 1) * W + x);
+    for (let y = 0; y < H; y += step) edge.push(y * W, y * W + W - 1);
+    const mean = [0, 1, 2].map((c) => edge.reduce((sum, p) => sum + data[p * 4 + c], 0) / edge.length);
+    const near = (i: number) => Math.abs(data[i] - mean[0]) + Math.abs(data[i + 1] - mean[1]) + Math.abs(data[i + 2] - mean[2]) < 40;
+    if (edge.filter((p) => near(p * 4)).length / edge.length > 0.97) {
+      x0 = W; y0 = H; x1 = -1; y1 = -1;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++)
+        if (!near((y * W + x) * 4)) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+      if (x1 >= 0) bg = `rgb(${mean.map(Math.round).join(',')})`;
+    }
+  }
+  const out = document.createElement('canvas');
+  out.width = out.height = size;
+  const ctx = out.getContext('2d')!;
+  const logo = !!bg && x1 >= 0;
+  ctx.fillStyle = bg || '#fff';
+  ctx.fillRect(0, 0, size, size);
+  ctx.imageSmoothingQuality = 'high';
+  if (logo) {
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+    const scale = (size * 0.9) / Math.hypot(w, h); // box diagonal = 90 % of the circle
+    const dw = w * scale, dh = h * scale;
+    ctx.drawImage(src, x0, y0, w, h, (size - dw) / 2, (size - dh) / 2, dw, dh);
+  } else {
+    const side = Math.min(W, H);
+    ctx.drawImage(src, (W - side) / 2, (H - side) / 2, side, side, 0, 0, size, size);
+  }
+  return new Promise((res, rej) => out.toBlob((b) => (b ? res(b) : rej(new Error('Could not read image'))), 'image/jpeg', 0.88));
+}
