@@ -74,6 +74,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
   const OVERPASS = ['https://overpass.kumi.systems/api/interpreter', 'https://overpass-api.de/api/interpreter'];
   const FT_PER_M = 1 / 0.3048;
   const PARALLEL = 3;
+  // Paragliding sites share the parachuting tag in OSM — never import them.
+  const PARAGLIDING = /paraglid|parapente|gleitschirm|parapendio|yama[cç] para/i;
 
   type Kind = 'dz' | 'tunnel';
   type Cand = { id: string; kind: Kind; name: string; lat: number; lng: number; website: string; host: string; town: string; dup?: string; state?: string; err?: boolean };
@@ -135,6 +137,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
         const website = t.website || t['contact:website'] || t.url || '';
         const lat = e.lat ?? e.center?.lat, lng = e.lon ?? e.center?.lon;
         if (lat == null || (!t.name && !website)) continue;
+        if (PARAGLIDING.test([t.sport, t.name, t.description, website].join(' '))) continue;
         const key = hostOf(website) || `osm-${e.type}${e.id}`;
         const rank = RANK(t);
         if (!best.has(key) || rank > best.get(key)!.rank) best.set(key, { e: { ...e, lat, lon: lng, website }, rank });
@@ -210,6 +213,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     }
     const d = data.draft;
     const name = (d.name || c.name).trim();
+    if (PARAGLIDING.test([name, d.description, d.website].join(' '))) return set('Skipped — paragliding, not skydiving', true);
     if (taken[c.kind].has(norm(name))) return set(`Skipped — “${name}” already exists`, true);
 
     let pin = { lat: c.lat, lng: c.lng }, country = d.country || '', city = '';
