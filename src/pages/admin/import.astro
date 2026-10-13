@@ -84,16 +84,23 @@ import AdminShell from '../../layouts/AdminShell.astro';
   import { el, toast, initAdmin, showError, toAvatar, PROD_ONLY, BUCKET, type Env } from '../../lib/admin';
 
   // south, west, north, east — split so each Overpass query stays fast.
-  const REGIONS: Record<string, [number, number, number, number][]> = {
-    europe: [[34, -25, 72, 45]],
-    na_east: [[7, -100, 72, -50]],
-    na_west: [[7, -170, 72, -100]],
-    samerica: [[-56, -95, 7, -30]],
-    africa_me: [[-36, -20, 34, 65]],
-    asia: [[-11, 45, 72, 180]],
-    oceania: [[-50, 110, -11, 180]],
+  // south, west, north, east — each region is cut into ~15°×20° tiles below,
+  // because one big box times out on Overpass (North America did).
+  const REGIONS: Record<string, [number, number, number, number]> = {
+    europe: [34, -25, 72, 45],
+    na_east: [7, -100, 72, -50],
+    na_west: [7, -170, 72, -100],
+    samerica: [-56, -95, 7, -30],
+    africa_me: [-36, -20, 34, 65],
+    asia: [-11, 45, 72, 180],
+    oceania: [-50, 110, -11, 180],
   };
-  const OVERPASS = ['https://overpass.kumi.systems/api/interpreter', 'https://overpass-api.de/api/interpreter'];
+  function tiles([s, w, n, e]: number[], dLat = 15, dLng = 20): number[][] {
+    const out: number[][] = [];
+    for (let a = s; a < n; a += dLat) for (let b = w; b < e; b += dLng) out.push([a, b, Math.min(a + dLat, n), Math.min(b + dLng, e)]);
+    return out;
+  }
+  const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
   const FT_PER_M = 1 / 0.3048;
   const PARALLEL = 3;
   // Removed after review (2026-10-13): tandem-only operators and places that
@@ -134,15 +141,22 @@ import AdminShell from '../../layouts/AdminShell.astro';
     return 12742 * Math.asin(Math.sqrt(x));
   }
 
+  // Exact tag values use Overpass' index (seconds); a regex on `sport` scans
+  // every sports pitch in the box and times out on big areas.
   async function overpass(bbox: number[]): Promise<any[]> {
-    const q = `[out:json][timeout:120];nwr["sport"~"skydiving|parachuting"](${bbox.join(',')});out center tags;`;
-    for (const url of OVERPASS) {
+    const box = bbox.join(',');
+    const q = `[out:json][timeout:60];(${['skydiving', 'parachuting', 'indoor_skydiving'].map((v) => `nwr["sport"="${v}"](${box});`).join('')});out center tags;`;
+    // Overpass allows ~2 requests per IP and answers 429/504 when busy:
+    // retry the main server with a growing pause, other servers last.
+    const order = [OVERPASS[0], OVERPASS[0], OVERPASS[1], OVERPASS[0], OVERPASS[2]];
+    for (const [i, url] of order.entries()) {
       try {
-        const res = await fetch(url, { method: 'POST', body: new URLSearchParams({ data: q }) });
+        const res = await fetch(url, { method: 'POST', body: new URLSearchParams({ data: q }), signal: AbortSignal.timeout(45_000) });
         if (res.ok && res.headers.get('content-type')?.includes('json')) return (await res.json()).elements ?? [];
       } catch {}
+      await new Promise((ok) => setTimeout(ok, 4000 * (i + 1)));
     }
-    throw new Error('OpenStreetMap didn’t answer — try again in a minute.');
+    throw new Error('OpenStreetMap didn’t answer');
   }
 
   // A club often has several OSM objects (hangar, landing area, club house):
@@ -163,7 +177,19 @@ import AdminShell from '../../layouts/AdminShell.astro';
       const names = new Map(existing.map((p) => [norm(p.name), p.name]));
       const hosts = new Map(existing.filter((p) => p.website).map((p) => [hostOf(p.website), p.name]));
 
-      const els = (await Promise.all(REGIONS[$<HTMLSelectElement>('[data-region]').value].map(overpass))).flat();
+      const queue = tiles(REGIONS[$<HTMLSelectElement>('[data-region]').value]);
+      const total = queue.length;
+      const els: any[] = [];
+      let done = 0, failed = 0;
+      const worker = async () => {
+        for (let t = queue.shift(); t; t = queue.shift()) {
+          try { els.push(...(await overpass(t))); } catch { failed++; }
+          summary.textContent = `Asking OpenStreetMap… ${++done} / ${total} areas`;
+        }
+      };
+      summary.textContent = `Asking OpenStreetMap… 0 / ${total} areas`;
+      await worker(); // one at a time — Overpass rate-limits parallel requests
+      if (failed === total) throw new Error('OpenStreetMap didn’t answer — try again in a few minutes.');
       const best = new Map<string, { e: any; rank: number }>();
       for (const e of els) {
         const t = e.tags ?? {};
@@ -189,7 +215,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
       const fresh = cands.filter((c) => !c.dup && c.website);
       fresh.forEach((c) => picked.add(c.id));
-      summary.textContent = `${cands.length} candidates · ${cands.filter((c) => c.dup).length} already in Arc · ${cands.filter((c) => !c.dup && !c.website).length} without a website · ${fresh.length} can be drafted. Tandem-only operators and places that aren’t dropzones are skipped automatically after reading their site — still untick anything obvious.`;
+      summary.textContent = `${failed ? `⚠️ ${failed} of ${total} areas didn’t answer — run it again later to fill the gaps. ` : ''}${cands.length} candidates · ${cands.filter((c) => c.dup).length} already in Arc · ${cands.filter((c) => !c.dup && !c.website).length} without a website · ${fresh.length} can be drafted. Tandem-only operators and places that aren’t dropzones are skipped automatically after reading their site — still untick anything obvious.`;
       head.hidden = false;
       render();
     } catch (err: any) {
