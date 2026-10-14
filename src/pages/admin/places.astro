@@ -612,18 +612,17 @@ import AdminShell from '../../layouts/AdminShell.astro';
   function fieldEl(f: Field): HTMLElement {
     const v = editing!.values[f.key];
     if (f.type === 'text' || f.type === 'number') {
-      const readonly = f.key === 'name' && editing!.original !== null;
+      const renaming = f.key === 'name' && editing!.original !== null;
       const input = el('input', {
-        type: f.type === 'number' ? 'number' : 'text', value: v ?? '', placeholder: f.placeholder ?? '', readOnly: readonly,
+        type: f.type === 'number' ? 'number' : 'text', value: v ?? '', placeholder: f.placeholder ?? '',
         min: f.type === 'number' ? '0' : undefined, step: f.decimal ? '0.01' : undefined,
-        title: readonly ? 'The name identifies the place and can’t be changed here.' : undefined,
         oninput: (e: Event) => {
           const raw = (e.target as HTMLInputElement).value;
           setVal(f.key, f.type === 'number' ? (raw === '' ? null : f.decimal ? Math.round(Number(raw) * 100) / 100 : Math.round(Number(raw))) : raw);
           if (f.key === 'name' && !editing!.original) paintHead();
         },
       });
-      return wrap(f.key, f.label, readonly ? 'can’t be renamed' : f.hint, input);
+      return wrap(f.key, f.label, renaming ? 'renaming keeps photos, reviews, favourites and home DZs' : f.hint, input);
     }
     if (f.type === 'textarea') return richTextEl(f);
     if (f.type === 'select') {
@@ -1215,7 +1214,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     const errors: Record<string, string> = {};
     const name = (v.name ?? '').trim();
     if (!name) errors.name = 'Give the place a name.';
-    else if (!original && places.some((p) => p.kind === kind && p.name.toLowerCase() === name.toLowerCase()))
+    else if (name !== original && places.some((p) => p.kind === kind && p.name !== original && p.name.toLowerCase() === name.toLowerCase()))
       errors.name = `“${name}” already exists — open it from the list instead.`;
     if (v.lat == null || v.lng == null) errors.address = 'Pick an address from the suggestions so the pin can be placed.';
     if (kind === 'dz' && !(v.country ?? '').trim()) errors.country = 'Country is required — pick an address or type it.';
@@ -1259,7 +1258,23 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
     const btn = $<HTMLButtonElement>('[data-save]');
     btn.disabled = true;
-    const { data, error } = await sb.rpc('admin_save_location', { p_kind: kind, p_original_name: original, p_data: payload });
+    // Rename first (admin_rename_location, 0095: moves photos, reviews,
+    // favourites… to the new name), then save the fields under the new name.
+    let target = original;
+    if (original && payload.name && payload.name !== original) {
+      if (!confirm(`Rename “${original}” to “${payload.name}”? Photos, reviews, favourites and home DZs move along; logbook entries keep the old name.`)) { btn.disabled = false; return; }
+      const ren = await sb.rpc('admin_rename_location', { p_kind: kind, p_old: original, p_new: payload.name });
+      if (ren.error) {
+        btn.disabled = false;
+        if (ren.error.message.includes('duplicate key')) return showErrors({ name: `“${payload.name}” already exists.` });
+        if (ren.error.message.includes('Could not find the function')) { toast('Renaming needs migration 0095 in this database first.'); return; }
+        toast(`Rename failed: ${ren.error.message}`);
+        return;
+      }
+      target = ren.data as string;
+      editing.original = target;
+    }
+    const { data, error } = await sb.rpc('admin_save_location', { p_kind: kind, p_original_name: target, p_data: payload });
     if (error) {
       btn.disabled = false;
       if (error.message.includes('duplicate key')) return showErrors({ name: `“${payload.name}” already exists.` });
