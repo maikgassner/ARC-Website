@@ -150,7 +150,11 @@ import AdminShell from '../../layouts/AdminShell.astro';
   <p class="hint" data-summary>Web search: Claude looks up the dropzones (or tunnels) of one country / US state — or a whole group like “USA – all states” or “Europe – all countries”, one search per area — federation lists, directories, the places’ own sites — about a cent per search. OpenStreetMap works well for Europe only. Places already in Arc (same name, same website or within 2 km) are skipped; each candidate’s own website is then read before anything is saved.</p>
   <div class="cand-head" data-cand-head hidden>
     <label><input type="checkbox" data-all> Select all with a website</label>
-    <span data-progress></span>
+    <span class="head-actions">
+      <button type="button" class="ghost-btn small" data-retry-areas hidden></button>
+      <button type="button" class="ghost-btn small" data-retry hidden></button>
+      <span data-progress></span>
+    </span>
   </div>
   <div class="cands" data-cands></div>
   <section class="logos">
@@ -175,6 +179,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   .grow { flex: 1; }
   .hint { color: var(--fg-3); font-size: .9rem; margin: 14px 0; max-width: 760px; }
   .cand-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin: 8px 0; font-weight: 700; color: var(--fg-2); }
+  .head-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
   .cand-head label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
   .cands { display: grid; gap: 8px; }
   :global(.cand) {
@@ -243,7 +248,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   const PARAGLIDING = /paraglid|parapente|gleitschirm|parapendio|yama[cç] para/i;
 
   type Kind = 'dz' | 'tunnel';
-  type Cand = { id: string; kind: Kind; name: string; lat: number; lng: number; website: string; host: string; town: string; dup?: string; state?: string; err?: boolean };
+  type Cand = { id: string; kind: Kind; name: string; lat: number; lng: number; website: string; host: string; town: string; dup?: string; state?: string; err?: boolean; retry?: boolean };
 
   const $ = <T extends Element>(sel: string) => document.querySelector(sel) as T;
   const list = $<HTMLElement>('[data-cands]');
@@ -327,21 +332,23 @@ import AdminShell from '../../layouts/AdminShell.astro';
     return { places: data.places, searches: data.searches ?? 0 };
   }
 
-  async function webCandidates(): Promise<{ cands: Cand[]; note: string }> {
-    const area = areaInput.value.trim();
+  async function webCandidates(only?: string[]): Promise<{ cands: Cand[]; note: string }> {
+    const area = only ? only.join(', ') : areaInput.value.trim();
     if (!area) throw new Error('Type a country first, e.g. “Spain”, “USA – Florida” or “USA – all states”.');
     if (env === 'test') throw new Error(PROD_ONLY);
     const kind = kindSel.value as Kind;
     const what = kind === 'tunnel' ? 'wind tunnels' : 'dropzones';
-    const areas = GROUPS[area.toLowerCase()] ?? [area];
+    const areas = only ?? GROUPS[area.toLowerCase()] ?? [area];
     if (areas.length > 1 && !confirm(`Search ${areas.length} areas one by one (about 1–2 cents each, ${Math.ceil(areas.length / 4)}–${Math.ceil(areas.length / 2)} minutes)? Keep this tab open.`)) throw new Error('Cancelled.');
     const queue = [...areas];
     const byHost = new Map<string, Cand>();
     let done = 0, searches = 0;
     const failed: string[] = [];
     summary.textContent = areas.length > 1 ? `Searching the web for ${what}… 0 / ${areas.length} areas` : `Searching the web for ${what} in ${area}… (30–90 seconds)`;
+    let noCredit = false;
     const worker = async () => {
       for (let a = queue.shift(); a; a = queue.shift()) {
+        if (noCredit) { failed.push(a); continue; }
         try {
           const res = await discoverArea(a, kind);
           searches += res.searches;
@@ -351,6 +358,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
             byHost.set(host, { id: `web${byHost.size}`, kind, name: p.name, lat: NaN, lng: NaN, website: p.website, host, town: [p.town, areaForGeocode(a)].filter(Boolean).join(', ') });
           }
         } catch (e: any) {
+          if (/credit/i.test(e.message)) noCredit = true;
           if (areas.length === 1) throw new Error(`Search failed: ${e.message}`);
           failed.push(a);
         }
@@ -358,23 +366,58 @@ import AdminShell from '../../layouts/AdminShell.astro';
       }
     };
     await Promise.all(Array.from({ length: Math.min(4, areas.length) }, worker));
-    const failNote = failed.length ? `⚠️ No answer for ${failed.join(', ')} — search those again on their own. ` : '';
+    failedAreas = failed;
+    const failNote = failed.length
+      ? `⚠️ ${noCredit ? 'Anthropic credit ran out — top it up, then use “Search again”. ' : ''}No answer for ${failed.join(', ')}. `
+      : '';
     return { cands: [...byHost.values()], note: `${failNote}${searches} web searches · ` };
+  }
+
+  // Same name, same website or (OSM points) within 2 km of a place in Arc.
+  async function buildDupOf(): Promise<((c: Cand) => string | undefined) | null> {
+    const [dz, tu] = await Promise.all([
+      sb.from('dropzones').select('name, lat, lng, website'),
+      sb.from('tunnels').select('name, lat, lng, website'),
+    ]);
+    if (dz.error || tu.error) { showError((dz.error || tu.error)!.message); return null; }
+    const existing = [...(dz.data ?? []), ...(tu.data ?? [])];
+    const names = new Map(existing.map((p) => [norm(p.name), p.name]));
+    const hosts = new Map(existing.filter((p) => p.website).map((p) => [hostOf(p.website), p.name]));
+    return (c: Cand) => names.get(norm(c.name)) ?? (c.host && hosts.get(c.host)) ?? (isNaN(c.lat) ? undefined : existing.find((p) => p.lat != null && km(p, c) < 2)?.name);
+  }
+
+  // The candidate list survives a reload (a group search costs money and
+  // minutes): kept per database in this browser for a day.
+  const storeKey = () => `arc-import-${env}`;
+  function saveList() {
+    try { localStorage.setItem(storeKey(), JSON.stringify({ at: Date.now(), cands, failedAreas, picked: [...picked] })); } catch {}
+  }
+  async function restoreList(): Promise<boolean> {
+    let saved: any = null;
+    try { saved = JSON.parse(localStorage.getItem(storeKey()) ?? 'null'); } catch {}
+    if (!saved?.cands?.length || Date.now() - saved.at > 86_400_000) return false;
+    const dupOf = await buildDupOf();
+    if (!dupOf) return false;
+    currentDupOf = dupOf;
+    // Re-check against the database: what was imported since shows as "in Arc".
+    cands = (saved.cands as Cand[]).map((c) => ({ ...c, lat: c.lat ?? NaN, lng: c.lng ?? NaN, dup: c.state?.startsWith('✓') ? c.dup : dupOf(c) }));
+    failedAreas = saved.failedAreas ?? [];
+    picked.clear();
+    for (const id of saved.picked ?? []) picked.add(id);
+    summary.textContent = `Restored the last list (${new Date(saved.at).toLocaleString('de-CH', { dateStyle: 'short', timeStyle: 'short' })}) · ${cands.length} candidates. “Find candidates” starts a new search.`;
+    head.hidden = false;
+    render();
+    return true;
   }
 
   async function find() {
     findBtn.disabled = true; importBtn.disabled = true;
     list.replaceChildren(); head.hidden = true; picked.clear();
     try {
-      const [dz, tu] = await Promise.all([
-        sb.from('dropzones').select('name, lat, lng, website'),
-        sb.from('tunnels').select('name, lat, lng, website'),
-      ]);
-      if (dz.error || tu.error) return showError((dz.error || tu.error)!.message);
-      const existing = [...(dz.data ?? []), ...(tu.data ?? [])];
-      const names = new Map(existing.map((p) => [norm(p.name), p.name]));
-      const hosts = new Map(existing.filter((p) => p.website).map((p) => [hostOf(p.website), p.name]));
-      const dupOf = (c: Cand) => names.get(norm(c.name)) ?? (c.host && hosts.get(c.host)) ?? (isNaN(c.lat) ? undefined : existing.find((p) => p.lat != null && km(p, c) < 2)?.name);
+      const dupOf = await buildDupOf();
+      if (!dupOf) return;
+      currentDupOf = dupOf;
+      failedAreas = [];
       const finish = (list: Cand[], note: string) => {
         cands = list.map((c) => ({ ...c, dup: dupOf(c) }))
           .sort((a, b) => Number(!!a.dup) - Number(!!b.dup) || Number(!a.website) - Number(!b.website) || a.name.localeCompare(b.name));
@@ -431,6 +474,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   }
 
   function render() {
+    saveList();
     const can = (c: Cand) => !c.dup && !!c.website && !c.state;
     list.replaceChildren(...cands.map((c) => {
       const box = el('input', { type: 'checkbox', checked: picked.has(c.id), disabled: !can(c) || running });
@@ -451,6 +495,13 @@ import AdminShell from '../../layouts/AdminShell.astro';
     importBtn.disabled = running || !selectable.some((c) => picked.has(c.id));
     importBtn.textContent = running ? 'Importing…' : `Import selected (${selectable.filter((c) => picked.has(c.id)).length})`;
     allBox.checked = selectable.length > 0 && selectable.every((c) => picked.has(c.id));
+    const retryable = cands.filter((c) => c.retry).length;
+    const rb = $<HTMLButtonElement>('[data-retry]');
+    rb.hidden = running || !retryable;
+    rb.textContent = `Retry failed (${retryable})`;
+    const ab = $<HTMLButtonElement>('[data-retry-areas]');
+    ab.hidden = running || !failedAreas.length;
+    ab.textContent = `Search again: ${failedAreas.length} area${failedAreas.length === 1 ? '' : 's'}`;
   }
   allBox.addEventListener('change', () => {
     cands.filter((c) => !c.dup && c.website && !c.state).forEach((c) => (allBox.checked ? picked.add(c.id) : picked.delete(c.id)));
@@ -474,6 +525,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
     if (error || !data?.draft) {
       let msg = error?.message ?? 'No draft came back.';
       try { msg = (await (error as any)?.context?.json?.())?.error ?? msg; } catch {}
+      if (/credit/i.test(msg)) outOfCredit = true;
+      c.retry = true; // API / network trouble — worth another go, unlike the skips below
       return set(msg, true);
     }
     const d = data.draft;
@@ -530,9 +583,10 @@ import AdminShell from '../../layouts/AdminShell.astro';
     const taken = { dz: new Set((dz.data ?? []).map((p) => norm(p.name))), tunnel: new Set((tu.data ?? []).map((p) => norm(p.name))) };
     const total = queue.length;
     let done = 0;
+    outOfCredit = false;
     const worker = async () => {
-      for (let c = queue.shift(); c; c = queue.shift()) {
-        try { await importOne(c, taken); } catch (err: any) { c.state = err.message; c.err = true; }
+      for (let c = queue.shift(); c && !outOfCredit; c = queue.shift()) {
+        try { await importOne(c, taken); } catch (err: any) { c.state = err.message; c.err = true; c.retry = true; }
         done++;
         progress.textContent = `${done} / ${total}`;
         render();
@@ -543,8 +597,42 @@ import AdminShell from '../../layouts/AdminShell.astro';
     running = false; findBtn.disabled = false;
     const ok = cands.filter((c) => c.state?.startsWith('✓')).length;
     progress.textContent = `${ok} added · ${total - ok} not`;
-    toast(`✓ Import finished — ${ok} added`);
+    toast(outOfCredit ? 'Stopped — Anthropic credit is used up. Top it up, then “Retry failed”.' : `✓ Import finished — ${ok} added`);
     render();
+  });
+
+  // Rows that failed for a passing reason (credit, timeout, API busy) can be
+  // tried again; real skips (tandem only, already in Arc, no address) can't.
+  let outOfCredit = false;
+  const retryBtn = $<HTMLButtonElement>('[data-retry]');
+  retryBtn.addEventListener('click', () => {
+    for (const c of cands) if (c.retry) { c.state = undefined; c.err = false; c.retry = false; picked.add(c.id); }
+    render();
+  });
+
+  // Areas of a group search that didn't answer: search just those again and
+  // add what they find to the list.
+  let failedAreas: string[] = [];
+  let currentDupOf: ((c: Cand) => string | undefined) | null = null;
+  const retryAreasBtn = $<HTMLButtonElement>('[data-retry-areas]');
+  retryAreasBtn.addEventListener('click', async () => {
+    const areas = [...failedAreas];
+    if (!areas.length || !currentDupOf) return;
+    retryAreasBtn.disabled = findBtn.disabled = true;
+    try {
+      const { cands: found } = await webCandidates(areas);
+      const have = new Set(cands.map((c) => c.host));
+      const fresh = found.filter((c) => !have.has(c.host)).map((c, i) => ({ ...c, id: `${c.id}r${Date.now()}${i}`, dup: currentDupOf!(c) }));
+      fresh.filter((c) => !c.dup).forEach((c) => picked.add(c.id));
+      cands = [...cands, ...fresh];
+      summary.textContent = `${failedAreas.length ? `⚠️ Still no answer for ${failedAreas.join(', ')}. ` : ''}Added ${fresh.length} more candidates from ${areas.length} areas.`;
+      render();
+    } catch (e: any) {
+      summary.textContent = e.message;
+    } finally {
+      retryAreasBtn.disabled = findBtn.disabled = false;
+      paint();
+    }
   });
 
   findBtn.addEventListener('click', find);
@@ -681,6 +769,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
   initAdmin(async (client, e) => {
     sb = client; env = e;
-    if (!running) { cands = []; list.replaceChildren(); head.hidden = true; paint(); }
+    if (running) return;
+    cands = []; list.replaceChildren(); head.hidden = true; paint();
+    await restoreList();
   });
 </script>
