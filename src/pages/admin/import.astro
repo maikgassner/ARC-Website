@@ -10,7 +10,125 @@ import AdminShell from '../../layouts/AdminShell.astro';
 ---
 <AdminShell title="Import" sub="Find dropzones and wind tunnels that aren’t in Arc yet and draft them from their own websites." active="import">
   <div class="toolbar">
-    <select data-region aria-label="Region">
+    <select data-source aria-label="Source">
+      <option value="web">Web search · by country</option>
+      <option value="osm">OpenStreetMap · by region</option>
+    </select>
+    <input data-area list="areas" placeholder="Country, or “USA – Florida”" aria-label="Country or US state" autocomplete="off">
+    <datalist id="areas">
+      <option value="Argentina"></option>
+      <option value="Australia"></option>
+      <option value="Austria"></option>
+      <option value="Belgium"></option>
+      <option value="Brazil"></option>
+      <option value="Bulgaria"></option>
+      <option value="Canada"></option>
+      <option value="Chile"></option>
+      <option value="China"></option>
+      <option value="Colombia"></option>
+      <option value="Croatia"></option>
+      <option value="Czech Republic"></option>
+      <option value="Denmark"></option>
+      <option value="Dubai / United Arab Emirates"></option>
+      <option value="Estonia"></option>
+      <option value="Finland"></option>
+      <option value="France"></option>
+      <option value="Germany"></option>
+      <option value="Greece"></option>
+      <option value="Hungary"></option>
+      <option value="Iceland"></option>
+      <option value="India"></option>
+      <option value="Ireland"></option>
+      <option value="Israel"></option>
+      <option value="Italy"></option>
+      <option value="Japan"></option>
+      <option value="Kenya"></option>
+      <option value="Latvia"></option>
+      <option value="Lithuania"></option>
+      <option value="Luxembourg"></option>
+      <option value="Malaysia"></option>
+      <option value="Mexico"></option>
+      <option value="Morocco"></option>
+      <option value="Namibia"></option>
+      <option value="Netherlands"></option>
+      <option value="New Zealand"></option>
+      <option value="Norway"></option>
+      <option value="Peru"></option>
+      <option value="Philippines"></option>
+      <option value="Poland"></option>
+      <option value="Portugal"></option>
+      <option value="Romania"></option>
+      <option value="Russia"></option>
+      <option value="Serbia"></option>
+      <option value="Slovakia"></option>
+      <option value="Slovenia"></option>
+      <option value="South Africa"></option>
+      <option value="South Korea"></option>
+      <option value="Spain"></option>
+      <option value="Sweden"></option>
+      <option value="Switzerland"></option>
+      <option value="Thailand"></option>
+      <option value="Turkey"></option>
+      <option value="Ukraine"></option>
+      <option value="United Kingdom"></option>
+      <option value="Uruguay"></option>
+      <option value="Vietnam"></option>
+      <option value="USA – Alabama"></option>
+      <option value="USA – Alaska"></option>
+      <option value="USA – Arizona"></option>
+      <option value="USA – Arkansas"></option>
+      <option value="USA – California"></option>
+      <option value="USA – Colorado"></option>
+      <option value="USA – Connecticut"></option>
+      <option value="USA – Delaware"></option>
+      <option value="USA – Florida"></option>
+      <option value="USA – Georgia"></option>
+      <option value="USA – Hawaii"></option>
+      <option value="USA – Idaho"></option>
+      <option value="USA – Illinois"></option>
+      <option value="USA – Indiana"></option>
+      <option value="USA – Iowa"></option>
+      <option value="USA – Kansas"></option>
+      <option value="USA – Kentucky"></option>
+      <option value="USA – Louisiana"></option>
+      <option value="USA – Maine"></option>
+      <option value="USA – Maryland"></option>
+      <option value="USA – Massachusetts"></option>
+      <option value="USA – Michigan"></option>
+      <option value="USA – Minnesota"></option>
+      <option value="USA – Mississippi"></option>
+      <option value="USA – Missouri"></option>
+      <option value="USA – Montana"></option>
+      <option value="USA – Nebraska"></option>
+      <option value="USA – Nevada"></option>
+      <option value="USA – New Hampshire"></option>
+      <option value="USA – New Jersey"></option>
+      <option value="USA – New Mexico"></option>
+      <option value="USA – New York"></option>
+      <option value="USA – North Carolina"></option>
+      <option value="USA – North Dakota"></option>
+      <option value="USA – Ohio"></option>
+      <option value="USA – Oklahoma"></option>
+      <option value="USA – Oregon"></option>
+      <option value="USA – Pennsylvania"></option>
+      <option value="USA – Rhode Island"></option>
+      <option value="USA – South Carolina"></option>
+      <option value="USA – South Dakota"></option>
+      <option value="USA – Tennessee"></option>
+      <option value="USA – Texas"></option>
+      <option value="USA – Utah"></option>
+      <option value="USA – Vermont"></option>
+      <option value="USA – Virginia"></option>
+      <option value="USA – Washington"></option>
+      <option value="USA – West Virginia"></option>
+      <option value="USA – Wisconsin"></option>
+      <option value="USA – Wyoming"></option>
+    </datalist>
+    <select data-kind aria-label="Type">
+      <option value="dz">Dropzones</option>
+      <option value="tunnel">Wind tunnels</option>
+    </select>
+    <select data-region aria-label="Region" hidden>
       <option value="europe">Europe</option>
       <option value="na_east">North America — east</option>
       <option value="na_west">North America — west</option>
@@ -23,7 +141,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     <span class="grow"></span>
     <button type="button" class="primary-btn small" data-import disabled>Import selected</button>
   </div>
-  <p class="hint" data-summary>Candidates come from OpenStreetMap (sport = skydiving / parachuting; indoor skydiving = wind tunnel). Places already in Arc — same name, same website or within 2 km — are skipped. Only candidates with a website can be drafted.</p>
+  <p class="hint" data-summary>Web search: Claude looks up the dropzones (or tunnels) of one country / US state — federation lists, directories, the places’ own sites — about a cent per search. OpenStreetMap works well for Europe only. Places already in Arc (same name, same website or within 2 km) are skipped; each candidate’s own website is then read before anything is saved.</p>
   <div class="cand-head" data-cand-head hidden>
     <label><input type="checkbox" data-all> Select all with a website</label>
     <span data-progress></span>
@@ -40,12 +158,13 @@ import AdminShell from '../../layouts/AdminShell.astro';
     <div class="cands" data-logo-list></div>
   </section>
 
-  <p class="osm">Candidate list © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a></p>
+  <p class="osm">OpenStreetMap candidate list © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a></p>
 </AdminShell>
 
 <style>
   .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
-  .toolbar select { width: auto; min-width: 240px; }
+  .toolbar select { width: auto; min-width: 200px; }
+  .toolbar [data-area] { width: auto; flex: 1 1 220px; max-width: 320px; }
   .grow { flex: 1; }
   .hint { color: var(--fg-3); font-size: .9rem; margin: 14px 0; max-width: 760px; }
   .cand-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin: 8px 0; font-weight: 700; color: var(--fg-2); }
@@ -163,9 +282,40 @@ import AdminShell from '../../layouts/AdminShell.astro';
   // one candidate per website, preferring the airfield / named club.
   const RANK = (t: Record<string, string>) => (t.aeroway === 'aerodrome' ? 3 : t.club || t.leisure === 'sports_centre' ? 2 : t.name ? 1 : 0);
 
+  const sourceSel = $<HTMLSelectElement>('[data-source]');
+  const areaInput = $<HTMLInputElement>('[data-area]');
+  const kindSel = $<HTMLSelectElement>('[data-kind]');
+  const regionSel = $<HTMLSelectElement>('[data-region]');
+  const paintSource = () => {
+    const web = sourceSel.value === 'web';
+    areaInput.hidden = kindSel.hidden = !web;
+    regionSel.hidden = web;
+  };
+  sourceSel.addEventListener('change', paintSource);
+  paintSource();
+
+  // Web search (edge function, mode 'discover'): names + websites, no pin yet —
+  // the pin comes from the address on the place's own site when importing.
+  async function webCandidates(): Promise<{ cands: Cand[]; note: string }> {
+    const area = areaInput.value.trim();
+    if (!area) throw new Error('Type a country first, e.g. “Spain” or “USA – Florida”.');
+    if (env === 'test') throw new Error(PROD_ONLY);
+    const kind = kindSel.value as Kind;
+    summary.textContent = `Searching the web for ${kind === 'tunnel' ? 'wind tunnels' : 'dropzones'} in ${area}… (30–90 seconds)`;
+    const { data, error } = await sb.functions.invoke('admin-fill-from-website', { body: { mode: 'discover', area, kind } });
+    if (error || !data?.places) {
+      let msg = error?.message ?? 'No list came back.';
+      try { msg = (await (error as any)?.context?.json?.())?.error ?? msg; } catch {}
+      throw new Error(`Search failed: ${msg}`);
+    }
+    const cands = (data.places as { name: string; website: string; town: string }[])
+      .filter((p) => !NOT_FOR_ARC.has(hostOf(p.website)) && !PARAGLIDING.test(`${p.name} ${p.website}`))
+      .map((p, i) => ({ id: `web${i}`, kind, name: p.name, lat: NaN, lng: NaN, website: p.website, host: hostOf(p.website), town: [p.town, area.replace(/^USA\s*[–-]\s*(.+)$/i, '$1, USA')].filter(Boolean).join(', ') }));
+    return { cands, note: `${data.searches ?? '?'} web searches · ` };
+  }
+
   async function find() {
     findBtn.disabled = true; importBtn.disabled = true;
-    summary.textContent = 'Asking OpenStreetMap… (up to a minute)';
     list.replaceChildren(); head.hidden = true; picked.clear();
     try {
       const [dz, tu] = await Promise.all([
@@ -176,8 +326,23 @@ import AdminShell from '../../layouts/AdminShell.astro';
       const existing = [...(dz.data ?? []), ...(tu.data ?? [])];
       const names = new Map(existing.map((p) => [norm(p.name), p.name]));
       const hosts = new Map(existing.filter((p) => p.website).map((p) => [hostOf(p.website), p.name]));
+      const dupOf = (c: Cand) => names.get(norm(c.name)) ?? (c.host && hosts.get(c.host)) ?? (isNaN(c.lat) ? undefined : existing.find((p) => p.lat != null && km(p, c) < 2)?.name);
+      const finish = (list: Cand[], note: string) => {
+        cands = list.map((c) => ({ ...c, dup: dupOf(c) }))
+          .sort((a, b) => Number(!!a.dup) - Number(!!b.dup) || Number(!a.website) - Number(!b.website) || a.name.localeCompare(b.name));
+        const fresh = cands.filter((c) => !c.dup && c.website);
+        fresh.forEach((c) => picked.add(c.id));
+        summary.textContent = `${note}${cands.length} candidates · ${cands.filter((c) => c.dup).length} already in Arc · ${cands.filter((c) => !c.dup && !c.website).length} without a website · ${fresh.length} can be drafted. Tandem-only operators and places that aren’t dropzones are skipped automatically after reading their site — still untick anything obvious.`;
+        head.hidden = false;
+        render();
+      };
+      if (sourceSel.value === 'web') {
+        const { cands: found, note } = await webCandidates();
+        return finish(found, note);
+      }
 
-      const queue = tiles(REGIONS[$<HTMLSelectElement>('[data-region]').value]);
+      summary.textContent = 'Asking OpenStreetMap…';
+      const queue = tiles(REGIONS[regionSel.value]);
       const total = queue.length;
       const els: any[] = [];
       let done = 0, failed = 0;
@@ -202,22 +367,14 @@ import AdminShell from '../../layouts/AdminShell.astro';
         const rank = RANK(t);
         if (!best.has(key) || rank > best.get(key)!.rank) best.set(key, { e: { ...e, lat, lon: lng, website }, rank });
       }
-      cands = [...best.values()].map(({ e }) => {
+      finish([...best.values()].map(({ e }) => {
         const t = e.tags ?? {};
-        const c: Cand = {
+        return {
           id: `${e.type}${e.id}`, kind: /indoor/.test(t.sport ?? '') ? 'tunnel' : 'dz', name: t.name || hostOf(e.website), lat: e.lat, lng: e.lon,
           website: e.website ? (/^https?:/i.test(e.website) ? e.website : `https://${e.website}`) : '',
           host: hostOf(e.website), town: [t['addr:city'], t['addr:country']].filter(Boolean).join(', '),
-        };
-        c.dup = names.get(norm(c.name)) ?? (c.host && hosts.get(c.host)) ?? existing.find((p) => p.lat != null && km(p, c) < 2)?.name;
-        return c;
-      }).sort((a, b) => Number(!!a.dup) - Number(!!b.dup) || Number(!a.website) - Number(!b.website) || a.name.localeCompare(b.name));
-
-      const fresh = cands.filter((c) => !c.dup && c.website);
-      fresh.forEach((c) => picked.add(c.id));
-      summary.textContent = `${failed ? `⚠️ ${failed} of ${total} areas didn’t answer — run it again later to fill the gaps. ` : ''}${cands.length} candidates · ${cands.filter((c) => c.dup).length} already in Arc · ${cands.filter((c) => !c.dup && !c.website).length} without a website · ${fresh.length} can be drafted. Tandem-only operators and places that aren’t dropzones are skipped automatically after reading their site — still untick anything obvious.`;
-      head.hidden = false;
-      render();
+        } as Cand;
+      }), failed ? `⚠️ ${failed} of ${total} areas didn’t answer — run it again later to fill the gaps. ` : '');
     } catch (err: any) {
       summary.textContent = err.message;
     } finally {
@@ -280,11 +437,15 @@ import AdminShell from '../../layouts/AdminShell.astro';
     if (PARAGLIDING.test([name, d.description, d.website].join(' '))) return set('Skipped — paragliding, not skydiving', true);
     if (taken[c.kind].has(norm(name))) return set(`Skipped — “${name}” already exists`, true);
 
+    // Pin: the address on the place's own site. OSM candidates fall back to
+    // their OSM point; web-search ones (no point) to "name, town".
+    const noPoint = isNaN(c.lat);
     let pin = { lat: c.lat, lng: c.lng }, country = d.country || '', city = '';
-    if (d.address) {
-      const g = await geocode(d.address);
-      if (g && km(g, c) < 30) { pin = g; country ||= g.country ?? ''; city = g.city ?? ''; }
-    }
+    let g = d.address ? await geocode(d.address) : null;
+    if (g && !noPoint && km(g, c) >= 30) g = null;
+    if (!g && noPoint) g = (await geocode(`${name}, ${c.town}`)) ?? (c.town ? await geocode(c.town) : null);
+    if (g) { pin = g; country ||= g.country ?? ''; city = g.city ?? ''; }
+    else if (noPoint) return set('No address found on the site — add it by hand under Places', true);
     if (!country) country = (await reverseCountry(pin)) ?? '';
 
     // Tunnels: same basics plus the chamber specs; prices stay empty like the DZ ones.
