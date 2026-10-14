@@ -192,6 +192,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
   :global(.cand small) { display: block; color: var(--fg-3); font-size: .82rem; word-break: break-all; }
   :global(.cand .state) { font-size: .85rem; font-weight: 700; color: var(--fg-3); text-align: right; max-width: 320px; }
   :global(.cand .state.ok) { color: var(--ok); }
+  :global(.cand .state-col) { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  :global(.cand .as-new) { padding: 6px 12px !important; font-size: .8rem !important; min-height: 0; height: auto; }
   :global(.cand .state.err) { color: var(--no); font-weight: 600; }
   :global(.cand input[type="checkbox"]), .cand-head input { width: 18px; height: 18px; accent-color: var(--fg); }
   .logos { margin-top: 48px; }
@@ -207,7 +209,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   @media (max-width: 640px) { :global(.logo-row) { grid-template-columns: 1fr; } }
   .osm { color: var(--fg-3); font-size: .8rem; margin-top: 24px; }
   .osm a { color: inherit; }
-  @media (max-width: 640px) { :global(.cand) { grid-template-columns: auto 1fr; } :global(.cand .state) { grid-column: 2; text-align: left; } }
+  @media (max-width: 640px) { :global(.cand) { grid-template-columns: auto 1fr; } :global(.cand .state-col) { grid-column: 2; align-items: flex-start; } :global(.cand .state) { text-align: left; } }
 </style>
 
 <script>
@@ -248,7 +250,10 @@ import AdminShell from '../../layouts/AdminShell.astro';
   const PARAGLIDING = /paraglid|parapente|gleitschirm|parapendio|yama[cç] para/i;
 
   type Kind = 'dz' | 'tunnel';
-  type Cand = { id: string; kind: Kind; name: string; lat: number; lng: number; website: string; host: string; town: string; dup?: string; state?: string; err?: boolean; retry?: boolean };
+  type Cand = { id: string; kind: Kind; name: string; lat: number; lng: number; website: string; host: string; town: string; dup?: string; state?: string; err?: boolean; retry?: boolean; forceName?: string; nameTaken?: boolean };
+  // Importable: not in Arc yet — or the admin chose to add it under its own
+  // name anyway (franchise sites, same-name places: "Add as new").
+  const importable = (c: Cand) => (!c.dup || !!c.forceName) && !!c.website && !c.state;
 
   const $ = <T extends Element>(sel: string) => document.querySelector(sel) as T;
   const list = $<HTMLElement>('[data-cands]');
@@ -475,23 +480,44 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
   function render() {
     saveList();
-    const can = (c: Cand) => !c.dup && !!c.website && !c.state;
+    const can = importable;
     list.replaceChildren(...cands.map((c) => {
       const box = el('input', { type: 'checkbox', checked: picked.has(c.id), disabled: !can(c) || running });
       box.addEventListener('change', () => { box.checked ? picked.add(c.id) : picked.delete(c.id); paint(); });
-      const state = c.state ?? (c.dup ? `In Arc as “${c.dup}”` : !c.website ? 'No website' : '');
-      return el('div', { class: `cand${can(c) || c.state ? '' : ' off'}` },
+      const state = c.state ?? (c.dup && !c.forceName ? `In Arc as “${c.dup}”` : c.forceName ? `Will be added as “${c.forceName}”` : !c.website ? 'No website' : '');
+      const asNew = !running && !!c.website && (c.nameTaken || (c.dup && !c.forceName)) && !c.state?.startsWith('✓')
+        && el('button', { type: 'button', class: 'ghost-btn small as-new', textContent: 'Add as new', onclick: () => addAsNew(c) });
+      return el('div', { class: `cand${can(c) || c.state || c.forceName ? '' : ' off'}` },
         box,
         el('div', {},
           el('strong', {}, c.name, c.kind === 'tunnel' ? el('span', { class: 'tag', textContent: 'Tunnel' }) : ''),
           el('small', {}, c.website ? el('a', { href: c.website, target: '_blank', rel: 'noopener', textContent: c.host }) : '', c.town ? ` · ${c.town}` : '')),
-        el('span', { class: `state${c.state ? (c.err ? ' err' : ' ok') : ''}`, textContent: state }));
+        el('div', { class: 'state-col' },
+          el('span', { class: `state${c.state ? (c.err ? ' err' : ' ok') : ''}`, textContent: state }),
+          asNew));
     }));
     paint();
   }
 
+  // Same owner / franchise site or a similar name already in Arc: add it as
+  // its own place under a name the admin confirms ("Name – Town" suggested),
+  // drafted from its website like any other candidate.
+  async function addAsNew(c: Cand) {
+    const town = (c.town || '').split(',')[0].trim();
+    const suggestion = c.forceName ?? (town && !c.name.toLowerCase().includes(town.toLowerCase()) ? `${c.name} – ${town}` : `${c.name} 2`);
+    const name = prompt('Name for the new place (it must differ from the one already in Arc):', suggestion)?.trim();
+    if (!name) return;
+    Object.assign(c, { forceName: name, state: undefined, err: false, retry: false, nameTaken: false });
+    picked.add(c.id);
+    render();
+    const [dz, tu] = await Promise.all([sb.from('dropzones').select('name'), sb.from('tunnels').select('name')]);
+    const taken = { dz: new Set((dz.data ?? []).map((p) => norm(p.name))), tunnel: new Set((tu.data ?? []).map((p) => norm(p.name))) };
+    try { await importOne(c, taken); } catch (e: any) { c.state = e.message; c.err = true; c.retry = true; }
+    render();
+  }
+
   function paint() {
-    const selectable = cands.filter((c) => !c.dup && c.website && !c.state);
+    const selectable = cands.filter(importable);
     importBtn.disabled = running || !selectable.some((c) => picked.has(c.id));
     importBtn.textContent = running ? 'Importing…' : `Import selected (${selectable.filter((c) => picked.has(c.id)).length})`;
     allBox.checked = selectable.length > 0 && selectable.every((c) => picked.has(c.id));
@@ -504,7 +530,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     ab.textContent = `Search again: ${failedAreas.length} area${failedAreas.length === 1 ? '' : 's'}`;
   }
   allBox.addEventListener('change', () => {
-    cands.filter((c) => !c.dup && c.website && !c.state).forEach((c) => (allBox.checked ? picked.add(c.id) : picked.delete(c.id)));
+    cands.filter(importable).forEach((c) => (allBox.checked ? picked.add(c.id) : picked.delete(c.id)));
     render();
   });
 
@@ -534,11 +560,12 @@ import AdminShell from '../../layouts/AdminShell.astro';
     // The site knows better than the OSM tag whether it's a tunnel.
     if (d.category === 'wind_tunnel') c.kind = 'tunnel';
     else if (d.category === 'dropzone') c.kind = 'dz';
-    const name = (d.name || c.name).trim();
+    const name = (c.forceName || d.name || c.name).trim();
     if (PARAGLIDING.test([name, d.description, d.website].join(' '))) return set('Skipped — paragliding, not skydiving', true);
-    if (taken[c.kind].has(norm(name))) return set(`Skipped — “${name}” already exists`, true);
+    if (taken[c.kind].has(norm(name))) { c.nameTaken = true; return set(`Skipped — “${name}” already exists`, true); }
     // A DZ and its tunnel must not share a name — the app links places by name.
     const other: Kind = c.kind === 'dz' ? 'tunnel' : 'dz';
+    if (taken[other].has(norm(name))) c.nameTaken = true;
     if (taken[other].has(norm(name))) return set(`Skipped — a ${other === 'dz' ? 'dropzone' : 'tunnel'} is already called “${name}”; add it by hand under its own name`, true);
 
     // Pin: the address on the place's own site. OSM candidates fall back to
@@ -565,6 +592,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
       description: d.description || null, facilities: [], stay: [], webcams: [],
     };
     const { error: saveErr } = await sb.rpc('admin_save_location', { p_kind: c.kind, p_original_name: null, p_data: payload });
+    if (saveErr?.message.includes('duplicate key')) c.nameTaken = true;
     if (saveErr) return set(saveErr.message.includes('duplicate key') ? `Skipped — “${name}” already exists` : `Save failed: ${saveErr.message}`, true);
     taken[c.kind].add(norm(name));
     set(`✓ Added as “${name}”${d.notes ? ` — ${d.notes}` : ''}`);
@@ -579,7 +607,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
   importBtn.addEventListener('click', async () => {
     if (env === 'test') { toast(PROD_ONLY); return; }
-    const queue = cands.filter((c) => picked.has(c.id) && !c.dup && c.website && !c.state);
+    const queue = cands.filter((c) => picked.has(c.id) && importable(c));
     if (!queue.length || !confirm(`Draft and add ${queue.length} place${queue.length > 1 ? 's' : ''} to the database? Each takes 10–30 seconds; keep this tab open.`)) return;
     running = true; findBtn.disabled = true; render();
     const [dz, tu] = await Promise.all([sb.from('dropzones').select('name'), sb.from('tunnels').select('name')]);
