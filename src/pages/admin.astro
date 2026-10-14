@@ -197,8 +197,14 @@ import AdminShell from '../layouts/AdminShell.astro';
     return card;
   }
 
+  // Altitude is stored in feet (altitude_ft) but entered and read in metres
+  // everywhere else in the admin — show it the same way here.
+  const isFt = (key: string) => key === 'altitude_ft';
+  const showField = (key: string, v: unknown) =>
+    isFt(key) && v != null && v !== '' && !isNaN(Number(v)) ? `${Math.round(Number(v) * 0.3048).toLocaleString('de-CH')} m` : show(v);
+
   function changeItem(key: string, value: Node | string) {
-    return el('li', {}, el('span', { class: 'k', textContent: key.replace(/_/g, ' ') }), value);
+    return el('li', {}, el('span', { class: 'k', textContent: isFt(key) ? 'altitude' : key.replace(/_/g, ' ') }), value);
   }
 
   function createCard(c: any) {
@@ -214,7 +220,7 @@ import AdminShell from '../layouts/AdminShell.astro';
         el('a', { href: `https://www.google.com/maps?q=${c.lat},${c.lng}`, target: '_blank', rel: 'noopener', textContent: 'Show on map ↗' }),
       ),
       c.note && el('p', { class: 'note', textContent: c.note }),
-      rest.length > 0 && el('ul', { class: 'changes' }, ...rest.map(([k, v]) => changeItem(k, el('span', { class: 'to', textContent: show(v) })))),
+      rest.length > 0 && el('ul', { class: 'changes' }, ...rest.map(([k, v]) => changeItem(k, el('span', { class: 'to', textContent: showField(k, v) })))),
       avatar && el('p', { class: 'thumb-label', textContent: 'Profile photo' }),
       avatar && el('div', { class: 'thumbs' }, thumb(avatar)),
       c.photo_paths?.length > 0 && el('p', { class: 'thumb-label', textContent: `Gallery · ${c.photo_paths.length}` }),
@@ -236,8 +242,8 @@ import AdminShell from '../layouts/AdminShell.astro';
       el('ul', { class: 'changes' },
         ...changes.filter(([k]) => k !== 'avatar_path').map(([k, v]) =>
           changeItem(k, el('span', {},
-            el('span', { class: 'from', textContent: show(v?.from) }), '  →  ',
-            el('span', { class: 'to', textContent: show(v?.to) }),
+            el('span', { class: 'from', textContent: showField(k, v?.from) }), '  →  ',
+            el('span', { class: 'to', textContent: showField(k, v?.to) }),
           ))),
       ),
       avatar && el('p', { class: 'thumb-label', textContent: 'New profile photo' }),
