@@ -278,6 +278,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
       { key: 'name', label: 'Name', type: 'text', placeholder: 'Skydive Example' },
       { key: 'address', label: 'Address', type: 'address', placeholder: 'Start typing the airfield or address…' },
       { key: 'country', label: 'Country', type: 'text', placeholder: 'Filled in from the address' },
+      { key: 'icao', label: 'Airfield code (ICAO)', type: 'text', placeholder: 'e.g. LOIH', hint: 'logbooks often name the DZ by it — the import matches it' },
     ] },
     { title: 'Jumping', fields: [
       { key: 'altitude_m', label: 'Exit altitude', type: 'number', placeholder: '4000', hint: 'In metres' },
@@ -1288,6 +1289,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
     if (kind === 'dz' && v.altitude_m != null && (v.altitude_m < 300 || v.altitude_m > 8000)) errors.altitude_m = 'Exit altitude in metres, e.g. 4000.';
     if (kind === 'dz' && v.guest_ticket_price != null && v.guest_ticket_price < 0) errors.guest_ticket_price = 'Can’t be negative.';
     if (kind === 'dz' && v.guest_ticket_price != null && !(v.currency ?? '').trim()) errors.currency = 'Which currency is the ticket price in?';
+    const ic = (v.icao ?? '').trim();
+    if (kind === 'dz' && ic && !/^[a-z0-9]{3,4}$/i.test(ic)) errors.icao = '3–4 letters or digits, e.g. LOIH.';
     const hu = (v.hours_url ?? '').trim();
     if (hu && (/\s/.test(hu) || !/^(https?:\/\/)?[^/]+\.[a-z]{2,}/i.test(hu))) errors.hours_url = 'That doesn’t look like a web address.';
     for (const k of ['price_no_coach_regular', 'price_no_coach_off', 'price_coach_regular', 'price_coach_off'])
@@ -1317,6 +1320,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
       payload.webcams = values.webcams ?? [];
     }
     if (payload.hours_url && !/^https?:\/\//i.test(payload.hours_url)) payload.hours_url = `https://${payload.hours_url}`;
+    if (payload.icao) payload.icao = String(payload.icao).toUpperCase();
     if (!values._showHours) payload.hours = null;
     payload.lat = values.lat;
     payload.lng = values.lng;
