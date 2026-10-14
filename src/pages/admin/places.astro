@@ -830,7 +830,12 @@ import AdminShell from '../../layouts/AdminShell.astro';
       if (env === 'test') { toast(PROD_ONLY); return; }
       toast('Opening the Google Maps link…');
       const { data, error } = await sb.functions.invoke('admin-fill-from-website', { body: { url: short, mode: 'resolve' } });
-      if (error || !data?.url || isShortMapsLink(data.url)) { toast('Couldn’t open that link — paste the address or “lat, lng” instead.'); return; }
+      if (error || !data?.url || isShortMapsLink(data.url)) {
+        let msg = error?.message ?? 'no address came back';
+        try { msg = (await (error as any)?.context?.json?.())?.error ?? msg; } catch {}
+        toast(`Couldn’t open that link (${msg}) — paste the address or “lat, lng” instead.`);
+        return;
+      }
       await useMapsUrl(data.url);
     }
 
