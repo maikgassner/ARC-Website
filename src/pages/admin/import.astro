@@ -537,6 +537,9 @@ import AdminShell from '../../layouts/AdminShell.astro';
     const name = (d.name || c.name).trim();
     if (PARAGLIDING.test([name, d.description, d.website].join(' '))) return set('Skipped — paragliding, not skydiving', true);
     if (taken[c.kind].has(norm(name))) return set(`Skipped — “${name}” already exists`, true);
+    // A DZ and its tunnel must not share a name — the app links places by name.
+    const other: Kind = c.kind === 'dz' ? 'tunnel' : 'dz';
+    if (taken[other].has(norm(name))) return set(`Skipped — a ${other === 'dz' ? 'dropzone' : 'tunnel'} is already called “${name}”; add it by hand under its own name`, true);
 
     // Pin: the address on the place's own site. OSM candidates fall back to
     // their OSM point; web-search ones (no point) to "name, town".
