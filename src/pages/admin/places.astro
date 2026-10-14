@@ -414,6 +414,18 @@ import AdminShell from '../../layouts/AdminShell.astro';
     const f = res.ok ? (await res.json()).features?.[0] : null;
     return f ? { lat, lng, p: f.properties ?? {} } : null;
   }
+  // Name / search text in a Google Maps link (…/maps/place/Skydive+Hohenems/@…
+  // or …/maps?q=…) — the address fallback when the pin has no street address.
+  function placeFromMapsUrl(text: string): string {
+    try {
+      const u = new URL(text);
+      const m = u.pathname.match(/\/maps\/(?:place|search)\/([^/@]+)/);
+      const raw = m ? decodeURIComponent(m[1].replace(/\+/g, ' ')) : (u.searchParams.get('q') ?? u.searchParams.get('query') ?? '');
+      return /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(raw.trim()) ? '' : raw.trim();
+    } catch { return ''; }
+  }
+  const isShortMapsLink = (text: string) => /^https?:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|g\.co\/kgs)\//i.test(text.trim());
+
   // A pasted "47.38, 9.69" or Google Maps link also works in the address field.
   function parseCoords(text: string): [number, number] | null {
     const pats = [/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/, /@(-?\d+\.\d+),\s*(-?\d+\.\d+)/, /[?&](?:q|ll|query)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/, /^\s*(-?\d{1,3}\.\d+)\s*[,;\s]\s*(-?\d{1,3}\.\d+)\s*$/];
@@ -778,21 +790,41 @@ import AdminShell from '../../layouts/AdminShell.astro';
       dirty = true;
       clearTimeout(timer);
       const q = input.value.trim();
-      const coords = parseCoords(q);
-      if (coords) {
-        reverseGeocode(coords[0], coords[1]).then((g) => {
-          choose(g ?? { lat: coords[0], lng: coords[1], p: {} });
-          if (!g) input.value = vals.address = '';
-          toast('📍 Pin set from the link');
-        }).catch(() => {});
-        return;
-      }
+      if (isShortMapsLink(q)) { useMapsLink(q); return; }
+      if (parseCoords(q) || /^https?:\/\//i.test(q)) { useMapsUrl(q); return; }
       if (q.length < 3) { results = []; paintList(); return; }
       timer = window.setTimeout(async () => {
         const mine = ++seq;
         try { const r = await searchAddress(q); if (mine === seq) { results = r; active = -1; paintList(); } } catch {}
       }, 300);
     });
+    // Pin from coordinates / a long Google Maps URL. The address text comes
+    // from the reverse lookup; for a field in the middle of nowhere that may be
+    // empty, so the place name from the link (or what Photon knows) is kept.
+    async function useMapsUrl(url: string) {
+      const coords = parseCoords(url);
+      const place = placeFromMapsUrl(url);
+      if (!coords) {
+        if (place) { input.value = place; input.dispatchEvent(new Event('input')); return; } // search by name
+        toast('No coordinates in that link — try “Share → Copy link” or paste “lat, lng”.');
+        return;
+      }
+      const g = await reverseGeocode(coords[0], coords[1]).catch(() => null);
+      choose(g ? { ...g, lat: coords[0], lng: coords[1] } : { lat: coords[0], lng: coords[1], p: {} });
+      if (!vals.address || /^https?:/i.test(vals.address)) input.value = vals.address = place || `${coords[0].toFixed(5)}, ${coords[1].toFixed(5)}`;
+      else if (place && !vals.address.toLowerCase().includes(place.toLowerCase())) input.value = vals.address = `${place}, ${vals.address}`;
+      toast('📍 Pin set from the link — check the address text');
+    }
+    // maps.app.goo.gl/… share links carry no coordinates; the edge function
+    // follows the redirect (PROD only).
+    async function useMapsLink(short: string) {
+      if (env === 'test') { toast(PROD_ONLY); return; }
+      toast('Opening the Google Maps link…');
+      const { data, error } = await sb.functions.invoke('admin-fill-from-website', { body: { url: short, mode: 'resolve' } });
+      if (error || !data?.url || isShortMapsLink(data.url)) { toast('Couldn’t open that link — paste the address or “lat, lng” instead.'); return; }
+      await useMapsUrl(data.url);
+    }
+
     input.addEventListener('keydown', (e) => {
       if (list.hidden || !results.length) return;
       if (e.key === 'ArrowDown') { e.preventDefault(); active = (active + 1) % results.length; paintList(); }
