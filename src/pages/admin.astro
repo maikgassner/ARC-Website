@@ -24,6 +24,9 @@ import AdminShell from '../layouts/AdminShell.astro';
         <button type="button" class="tile" role="tab" data-filter="reports">
           <span class="tile-num" data-count="reports">0</span><span class="tile-label">Reports</span>
         </button>
+        <button type="button" class="tile" role="tab" data-filter="removals">
+          <span class="tile-num" data-count="removals">0</span><span class="tile-label">Removals</span>
+        </button>
       </div>
 
       <section data-section="reports">
@@ -43,6 +46,10 @@ import AdminShell from '../layouts/AdminShell.astro';
         <h2>Edit suggestions</h2>
         <div class="stack" data-list="edits"></div>
       </section>
+      <section data-section="removals">
+        <h2>Removal requests</h2>
+        <div class="stack" data-list="removals"></div>
+      </section>
 
       <div class="all-clear" data-allclear hidden>
         <div class="all-clear-icon">✓</div>
@@ -54,7 +61,7 @@ import AdminShell from '../layouts/AdminShell.astro';
 
 <style>
   /* ---------- Tiles ---------- */
-  .tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-top: 8px; }
+  .tiles { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-top: 8px; }
   .tile {
     display: grid; gap: 2px; text-align: left; cursor: pointer; padding: 16px 18px; border-radius: 18px;
     border: 2px solid transparent; background: var(--surface); box-shadow: var(--shadow); color: var(--fg);
@@ -138,14 +145,14 @@ import AdminShell from '../layouts/AdminShell.astro';
   import type { SupabaseClient } from '@supabase/supabase-js';
   import { el, add, svgIcon as svg, photoUrl, openLightbox, toast, initAdmin, showError, type Env } from '../lib/admin';
 
-  type List = 'photos' | 'creates' | 'edits' | 'reports';
+  type List = 'photos' | 'creates' | 'edits' | 'reports' | 'removals';
 
   const $ = <T extends Element>(sel: string) => document.querySelector(sel) as T;
   const $$ = <T extends Element>(sel: string) => Array.from(document.querySelectorAll(sel)) as T[];
   const allClear = $<HTMLElement>('[data-allclear]');
 
   let filter: 'all' | List = 'all';
-  let counts: Record<List, number> = { photos: 0, creates: 0, edits: 0, reports: 0 };
+  let counts: Record<List, number> = { photos: 0, creates: 0, edits: 0, reports: 0, removals: 0 };
   let sb: SupabaseClient;
   let env: Env = 'prod';
 
@@ -291,13 +298,50 @@ import AdminShell from '../layouts/AdminShell.astro';
     return card;
   }
 
+  // "This place shouldn't be on Arc" from the app (0098): Remove place deletes
+  // it (photos, reviews, suggestions go with it) and closes every open
+  // request for it; Keep rejects them.
+  const REMOVAL_REASON: Record<string, string> = {
+    closed: 'Permanently closed', does_not_exist: 'Doesn’t exist / wrong place', duplicate: 'Duplicate',
+    tandem_only: 'Tandem only', not_skydiving: 'Not a skydiving place', other: 'Other',
+  };
+  function removalCard(q: any) {
+    const card = el('div', { class: 'mod-card' });
+    const resolve = async (remove: boolean, btns: HTMLButtonElement[]) => {
+      if (remove && !confirm(`Delete “${q.location}” with its photos, reviews and suggestions? This can’t be undone.`)) return;
+      btns.forEach((b) => (b.disabled = true));
+      const { error } = await sb.rpc('admin_resolve_removal', { p_id: q.id, p_remove: remove });
+      if (error) { btns.forEach((b) => (b.disabled = false)); toast(`Failed: ${error.message}`); return; }
+      toast(`${remove ? '✕ Removed' : '✓ Kept'} · ${q.location}`);
+      card.classList.add('leaving');
+      setTimeout(() => { card.remove(); load(); }, 300);
+    };
+    const keep = el('button', { class: 'neutral', type: 'button' }, svg('M5 12.5l4.5 4.5L19 7.5'), 'Keep') as HTMLButtonElement;
+    const remove = el('button', { class: 'reject', type: 'button' }, svg('M6 6l12 12M18 6L6 18'), 'Remove place') as HTMLButtonElement;
+    keep.onclick = () => resolve(false, [keep, remove]);
+    remove.onclick = () => resolve(true, [keep, remove]);
+    add(card,
+      kindTag(q.kind === 'tunnel', ` · ${REMOVAL_REASON[q.reason] ?? q.reason}`),
+      el('h3', { textContent: q.location }),
+      el('p', { class: 'meta' },
+        `${q.submitter || 'Unknown'} · ${when(q.created_at)} · `,
+        q.still_exists
+          ? el('a', { href: `/admin/places?open=${encodeURIComponent(q.location)}`, textContent: 'Open in Places ↗' })
+          : 'already removed'),
+      q.duplicate_of && el('p', { class: 'meta', textContent: `Duplicate of: ${q.duplicate_of}` }),
+      q.note && el('p', { class: 'note', textContent: `“${q.note}”` }),
+      el('div', { class: 'actions' }, keep, remove),
+    );
+    return card;
+  }
+
   function render(list: List, items: any[], make: (x: any) => HTMLElement) {
     const box = $<HTMLElement>(`[data-list="${list}"]`);
     box.replaceChildren(...(items.length ? items.map(make) : [el('p', { class: 'empty', textContent: 'Nothing pending here.' })]));
   }
 
   function updateCounts() {
-    const total = counts.photos + counts.creates + counts.edits + counts.reports;
+    const total = counts.photos + counts.creates + counts.edits + counts.reports + counts.removals;
     const all: Record<string, number> = { ...counts, all: total };
     for (const [k, n] of Object.entries(all)) {
       $<HTMLElement>(`[data-count="${k}"]`).textContent = String(n);
@@ -312,10 +356,11 @@ import AdminShell from '../layouts/AdminShell.astro';
     creates: 'No new dropzones or tunnels to review. Go jump.',
     edits: 'No edit suggestions to review. Go jump.',
     reports: 'No open reports. Go jump.',
+    removals: 'No removal requests. Go jump.',
   };
 
   function applyFilter() {
-    const shown = filter === 'all' ? counts.photos + counts.creates + counts.edits + counts.reports : counts[filter];
+    const shown = filter === 'all' ? counts.photos + counts.creates + counts.edits + counts.reports + counts.removals : counts[filter];
     $$<HTMLElement>('[data-filter]').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.filter === filter)));
     // Empty sections are always hidden; when the current view is empty, the
     // same "All clear" screen shows for every filter.
@@ -336,7 +381,8 @@ import AdminShell from '../layouts/AdminShell.astro';
     render('creates', data.creates, createCard);
     render('edits', data.edits, editCard);
     render('reports', data.reports ?? [], reportCard);
-    counts = { photos: data.photos.length, creates: data.creates.length, edits: data.edits.length, reports: (data.reports ?? []).length };
+    render('removals', data.removals ?? [], removalCard);
+    counts = { photos: data.photos.length, creates: data.creates.length, edits: data.edits.length, reports: (data.reports ?? []).length, removals: (data.removals ?? []).length };
     updateCounts();
   }
 

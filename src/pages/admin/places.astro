@@ -1397,6 +1397,10 @@ import AdminShell from '../../layouts/AdminShell.astro';
     editing = null; dirty = false;
     editor.hidden = true; listView.hidden = false;
     await loadPlaces();
+    // /admin/places?open=<name> (links from Moderation) opens that place.
+    const openName = new URLSearchParams(location.search).get('open');
+    const toOpen = openName ? places.find((p) => p.name === openName) : undefined;
+    if (toOpen) { await openEditor(toOpen.kind, toOpen); return; }
     // Dev preview of the editor: /admin/places?demo&edit (or &new).
     if (import.meta.env.DEV && location.search.includes('demo')) {
       if (location.search.includes('edit')) openEditor('dz', places.find((p) => p.kind === 'dz' && p.avatar_path)!);
