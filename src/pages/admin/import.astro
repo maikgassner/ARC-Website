@@ -16,6 +16,12 @@ import AdminShell from '../../layouts/AdminShell.astro';
     </select>
     <input data-area list="areas" placeholder="Country, or “USA – Florida”" aria-label="Country or US state" autocomplete="off">
     <datalist id="areas">
+      <option value="USA – all states"></option>
+      <option value="Europe – all countries"></option>
+      <option value="Latin America – all countries"></option>
+      <option value="Asia – all countries"></option>
+      <option value="Africa & Middle East – all countries"></option>
+      <option value="Oceania – all countries"></option>
       <option value="Argentina"></option>
       <option value="Australia"></option>
       <option value="Austria"></option>
@@ -141,7 +147,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     <span class="grow"></span>
     <button type="button" class="primary-btn small" data-import disabled>Import selected</button>
   </div>
-  <p class="hint" data-summary>Web search: Claude looks up the dropzones (or tunnels) of one country / US state — federation lists, directories, the places’ own sites — about a cent per search. OpenStreetMap works well for Europe only. Places already in Arc (same name, same website or within 2 km) are skipped; each candidate’s own website is then read before anything is saved.</p>
+  <p class="hint" data-summary>Web search: Claude looks up the dropzones (or tunnels) of one country / US state — or a whole group like “USA – all states” or “Europe – all countries”, one search per area — federation lists, directories, the places’ own sites — about a cent per search. OpenStreetMap works well for Europe only. Places already in Arc (same name, same website or within 2 km) are skipped; each candidate’s own website is then read before anything is saved.</p>
   <div class="cand-head" data-cand-head hidden>
     <label><input type="checkbox" data-all> Select all with a website</label>
     <span data-progress></span>
@@ -297,22 +303,63 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
   // Web search (edge function, mode 'discover'): names + websites, no pin yet —
   // the pin comes from the address on the place's own site when importing.
-  async function webCandidates(): Promise<{ cands: Cand[]; note: string }> {
-    const area = areaInput.value.trim();
-    if (!area) throw new Error('Type a country first, e.g. “Spain” or “USA – Florida”.');
-    if (env === 'test') throw new Error(PROD_ONLY);
-    const kind = kindSel.value as Kind;
-    summary.textContent = `Searching the web for ${kind === 'tunnel' ? 'wind tunnels' : 'dropzones'} in ${area}… (30–90 seconds)`;
+  // "USA – all states" / "Europe – all countries" …: one search per state or
+  // country (a single search can't list 200+ places), 4 at a time, merged.
+  const US_STATES = ['Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut', 'Delaware', 'Florida', 'Georgia', 'Hawaii', 'Idaho', 'Illinois', 'Indiana', 'Iowa', 'Kansas', 'Kentucky', 'Louisiana', 'Maine', 'Maryland', 'Massachusetts', 'Michigan', 'Minnesota', 'Mississippi', 'Missouri', 'Montana', 'Nebraska', 'Nevada', 'New Hampshire', 'New Jersey', 'New Mexico', 'New York', 'North Carolina', 'North Dakota', 'Ohio', 'Oklahoma', 'Oregon', 'Pennsylvania', 'Rhode Island', 'South Carolina', 'South Dakota', 'Tennessee', 'Texas', 'Utah', 'Vermont', 'Virginia', 'Washington', 'West Virginia', 'Wisconsin', 'Wyoming'];
+  const GROUPS: Record<string, string[]> = {
+    'usa – all states': US_STATES.map((st) => `USA – ${st}`),
+    'europe – all countries': ['Austria', 'Belgium', 'Bulgaria', 'Croatia', 'Cyprus', 'Czech Republic', 'Denmark', 'Estonia', 'Finland', 'France', 'Germany', 'Greece', 'Hungary', 'Iceland', 'Ireland', 'Italy', 'Latvia', 'Lithuania', 'Luxembourg', 'Malta', 'Montenegro', 'Netherlands', 'North Macedonia', 'Norway', 'Poland', 'Portugal', 'Romania', 'Serbia', 'Slovakia', 'Slovenia', 'Spain', 'Sweden', 'Switzerland', 'Turkey', 'Ukraine', 'United Kingdom', 'Bosnia and Herzegovina', 'Albania', 'Russia', 'Belarus'],
+    'latin america – all countries': ['Mexico', 'Guatemala', 'Costa Rica', 'Panama', 'Dominican Republic', 'Puerto Rico', 'Colombia', 'Ecuador', 'Peru', 'Bolivia', 'Chile', 'Argentina', 'Uruguay', 'Paraguay', 'Brazil', 'Venezuela'],
+    'asia – all countries': ['India', 'Nepal', 'Thailand', 'Vietnam', 'Cambodia', 'Malaysia', 'Singapore', 'Indonesia', 'Philippines', 'China', 'Taiwan', 'Japan', 'South Korea', 'Kazakhstan', 'Uzbekistan'],
+    'africa & middle east – all countries': ['South Africa', 'Namibia', 'Kenya', 'Tanzania', 'Morocco', 'Egypt', 'Tunisia', 'Israel', 'Jordan', 'United Arab Emirates', 'Qatar', 'Oman', 'Saudi Arabia'],
+    'oceania – all countries': ['Australia – New South Wales', 'Australia – Queensland', 'Australia – Victoria', 'Australia – Western Australia', 'Australia – South Australia', 'Australia – Tasmania', 'Australia – Northern Territory', 'New Zealand', 'Fiji'],
+  };
+  // "USA – Florida" → "Florida, USA" for geocoding the town.
+  const areaForGeocode = (a: string) => a.replace(/^(USA|Australia)\s*[–-]\s*(.+)$/i, '$2, $1');
+
+  async function discoverArea(area: string, kind: Kind): Promise<{ places: { name: string; website: string; town: string }[]; searches: number }> {
     const { data, error } = await sb.functions.invoke('admin-fill-from-website', { body: { mode: 'discover', area, kind } });
     if (error || !data?.places) {
       let msg = error?.message ?? 'No list came back.';
       try { msg = (await (error as any)?.context?.json?.())?.error ?? msg; } catch {}
-      throw new Error(`Search failed: ${msg}`);
+      throw new Error(msg);
     }
-    const cands = (data.places as { name: string; website: string; town: string }[])
-      .filter((p) => !NOT_FOR_ARC.has(hostOf(p.website)) && !PARAGLIDING.test(`${p.name} ${p.website}`))
-      .map((p, i) => ({ id: `web${i}`, kind, name: p.name, lat: NaN, lng: NaN, website: p.website, host: hostOf(p.website), town: [p.town, area.replace(/^USA\s*[–-]\s*(.+)$/i, '$1, USA')].filter(Boolean).join(', ') }));
-    return { cands, note: `${data.searches ?? '?'} web searches · ` };
+    return { places: data.places, searches: data.searches ?? 0 };
+  }
+
+  async function webCandidates(): Promise<{ cands: Cand[]; note: string }> {
+    const area = areaInput.value.trim();
+    if (!area) throw new Error('Type a country first, e.g. “Spain”, “USA – Florida” or “USA – all states”.');
+    if (env === 'test') throw new Error(PROD_ONLY);
+    const kind = kindSel.value as Kind;
+    const what = kind === 'tunnel' ? 'wind tunnels' : 'dropzones';
+    const areas = GROUPS[area.toLowerCase()] ?? [area];
+    if (areas.length > 1 && !confirm(`Search ${areas.length} areas one by one (about 1–2 cents each, ${Math.ceil(areas.length / 4)}–${Math.ceil(areas.length / 2)} minutes)? Keep this tab open.`)) throw new Error('Cancelled.');
+    const queue = [...areas];
+    const byHost = new Map<string, Cand>();
+    let done = 0, searches = 0;
+    const failed: string[] = [];
+    summary.textContent = areas.length > 1 ? `Searching the web for ${what}… 0 / ${areas.length} areas` : `Searching the web for ${what} in ${area}… (30–90 seconds)`;
+    const worker = async () => {
+      for (let a = queue.shift(); a; a = queue.shift()) {
+        try {
+          const res = await discoverArea(a, kind);
+          searches += res.searches;
+          for (const p of res.places) {
+            const host = hostOf(p.website);
+            if (!host || byHost.has(host) || NOT_FOR_ARC.has(host) || PARAGLIDING.test(`${p.name} ${p.website}`)) continue;
+            byHost.set(host, { id: `web${byHost.size}`, kind, name: p.name, lat: NaN, lng: NaN, website: p.website, host, town: [p.town, areaForGeocode(a)].filter(Boolean).join(', ') });
+          }
+        } catch (e: any) {
+          if (areas.length === 1) throw new Error(`Search failed: ${e.message}`);
+          failed.push(a);
+        }
+        if (areas.length > 1) summary.textContent = `Searching the web for ${what}… ${++done} / ${areas.length} areas · ${byHost.size} found so far`;
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, areas.length) }, worker));
+    const failNote = failed.length ? `⚠️ No answer for ${failed.join(', ')} — search those again on their own. ` : '';
+    return { cands: [...byHost.values()], note: `${failNote}${searches} web searches · ` };
   }
 
   async function find() {
