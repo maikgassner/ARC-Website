@@ -246,6 +246,11 @@ import AdminShell from '../layouts/AdminShell.astro';
             el('span', { class: 'to', textContent: showField(k, v?.to) }),
           ))),
       ),
+      // A suggested new map pin (app: "Map pin → Remove" + new address): link both spots.
+      e.changes?.lat && e.changes?.lng && el('p', { class: 'meta' },
+        el('a', { href: `https://www.google.com/maps?q=${e.changes.lat.from},${e.changes.lng.from}`, target: '_blank', rel: 'noopener', textContent: 'Current pin ↗' }),
+        '  →  ',
+        el('a', { href: `https://www.google.com/maps?q=${e.changes.lat.to},${e.changes.lng.to}`, target: '_blank', rel: 'noopener', textContent: 'Suggested pin ↗' })),
       avatar && el('p', { class: 'thumb-label', textContent: 'New profile photo' }),
       avatar && el('div', { class: 'thumbs' }, thumb(avatar)),
       actions('edits', e.source, e.id, e.location, card),

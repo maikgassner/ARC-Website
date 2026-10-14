@@ -95,6 +95,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   :global(.field) { display: grid; gap: 6px; }
   :global(.field > span) { font-size: .85rem; font-weight: 700; color: var(--fg-2); }
   :global(.field > span em) { font-style: normal; font-weight: 500; color: var(--fg-3); }
+  :global(.link-btn) { border: 0; background: none; padding: 0; font: inherit; color: var(--no); cursor: pointer; text-decoration: underline; }
   :global(.field input[readonly]) { color: var(--fg-3) !important; background: var(--ink-100) !important; cursor: not-allowed; }
   :global(.row2) { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   :global(.hint) { margin: -4px 0 0; font-size: .8rem; color: var(--fg-3); }
@@ -742,7 +743,12 @@ import AdminShell from '../../layouts/AdminShell.astro';
       const has = vals.lat != null && vals.lng != null;
       pin.classList.toggle('none', !has);
       pin.replaceChildren(...(has
-        ? ['📍 Pin set · ', el('a', { href: `https://www.google.com/maps?q=${vals.lat},${vals.lng}`, target: '_blank', rel: 'noopener', textContent: 'Check it on Google Maps ↗' })]
+        ? ['📍 Pin set · ', el('a', { href: `https://www.google.com/maps?q=${vals.lat},${vals.lng}`, target: '_blank', rel: 'noopener', textContent: 'Check it on Google Maps ↗' }),
+           ' · ', el('button', { type: 'button', class: 'link-btn', textContent: 'Remove pin', onclick: () => {
+             // Clears the position only — pick an address or paste a Google
+             // Maps link / "lat, lng" to set the new one (saving needs a pin).
+             vals.lat = null; vals.lng = null; dirty = true; paintPin(); input.focus();
+           } })]
         : ['No pin yet — pick an address from the suggestions (or paste a Google Maps link).']));
     };
     const setText = (key: string, value: string) => {
