@@ -1216,6 +1216,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
     if (!name) errors.name = 'Give the place a name.';
     else if (name !== original && places.some((p) => p.kind === kind && p.name !== original && p.name.toLowerCase() === name.toLowerCase()))
       errors.name = `“${name}” already exists — open it from the list instead.`;
+    else if (places.some((p) => p.kind !== kind && p.name.toLowerCase() === name.toLowerCase()))
+      errors.name = `A ${kind === 'dz' ? 'tunnel' : 'dropzone'} is already called “${name}” — give this one its own name (e.g. the tunnel’s brand).`;
     if (v.lat == null || v.lng == null) errors.address = 'Pick an address from the suggestions so the pin can be placed.';
     if (kind === 'dz' && !(v.country ?? '').trim()) errors.country = 'Country is required — pick an address or type it.';
     if (kind === 'tunnel' && !(v.location ?? '').trim()) errors.location = 'Location is required, e.g. “Winterthur, Switzerland”.';
