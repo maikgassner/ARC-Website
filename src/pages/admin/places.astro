@@ -426,6 +426,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
     } catch { return ''; }
   }
   const isShortMapsLink = (text: string) => /^https?:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|g\.co\/kgs)\//i.test(text.trim());
+  // A link pasted next to old address text still counts — take the URL itself.
+  const urlIn = (text: string) => text.match(/https?:\/\/\S+/i)?.[0] ?? null;
 
   // A pasted "47.38, 9.69" or Google Maps link also works in the address field.
   function parseCoords(text: string): [number, number] | null {
@@ -747,7 +749,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
            ' · ', el('button', { type: 'button', class: 'link-btn', textContent: 'Remove pin', onclick: () => {
              // Clears the position only — pick an address or paste a Google
              // Maps link / "lat, lng" to set the new one (saving needs a pin).
-             vals.lat = null; vals.lng = null; dirty = true; paintPin(); input.focus();
+             vals.lat = null; vals.lng = null; vals.address = ''; input.value = ''; dirty = true; paintPin(); input.focus();
            } })]
         : ['No pin yet — pick an address from the suggestions (or paste a Google Maps link).']));
     };
@@ -795,8 +797,10 @@ import AdminShell from '../../layouts/AdminShell.astro';
       dirty = true;
       clearTimeout(timer);
       const q = input.value.trim();
-      if (isShortMapsLink(q)) { useMapsLink(q); return; }
-      if (parseCoords(q) || /^https?:\/\//i.test(q)) { useMapsUrl(q); return; }
+      const link = urlIn(q);
+      if (link && isShortMapsLink(link)) { input.value = link; useMapsLink(link); return; }
+      if (link) { input.value = link; useMapsUrl(link); return; }
+      if (parseCoords(q)) { useMapsUrl(q); return; }
       if (q.length < 3) { results = []; paintList(); return; }
       timer = window.setTimeout(async () => {
         const mine = ++seq;
