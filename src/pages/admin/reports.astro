@@ -1,0 +1,277 @@
+---
+// Usage reports from our own tables (admin_report(), ARC/supabase/migrations/
+// 0101_reports.sql): users per month and country, active users, jumps,
+// messages, signatures, setup funnel, top DZs. No tracking tool involved.
+import AdminShell from '../../layouts/AdminShell.astro';
+---
+<AdminShell title="Reports" sub="How Arc is used, month by month." active="reports">
+  <div class="toolbar">
+    <div class="pills" role="radiogroup" aria-label="Period">
+      <button type="button" role="radio" data-months="6">6 months</button>
+      <button type="button" role="radio" data-months="12">12 months</button>
+      <button type="button" role="radio" data-months="24">24 months</button>
+    </div>
+    <button type="button" class="ghost-btn" data-csv>Download CSV</button>
+  </div>
+  <p class="note" data-generated></p>
+
+  <div class="tiles" data-tiles></div>
+
+  <section>
+    <h2>Users per month</h2>
+    <div class="card"><div class="bars" data-user-bars></div>
+      <div class="legend"><span><i class="sw new"></i>New users</span><span><i class="sw active"></i>Active users (opened Arc)</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Month by month</h2>
+    <div class="card scroll"><table class="table" data-monthly></table></div>
+    <p class="note">Jumps by date added to Arc, split into logged, old jumps added by hand and imported. The split and active users only count from the update that records them (migration 0101) on.</p>
+  </section>
+
+  <div class="two">
+    <section>
+      <div class="sec-head">
+        <h2>New users by country</h2>
+        <select data-country-month aria-label="Month"></select>
+      </div>
+      <div class="card" data-countries></div>
+      <p class="note">From the phone's region at sign-up; older accounts use their home DZ's country until they next open Arc.</p>
+    </section>
+
+    <section>
+      <h2>Profile setup</h2>
+      <div class="card" data-setup></div>
+      <p class="note">How far accounts get, of all accounts. Shows where people stop setting up.</p>
+    </section>
+  </div>
+
+  <section>
+    <h2>Top dropzones · last 30 days</h2>
+    <div class="card scroll"><table class="table" data-top-dzs></table></div>
+  </section>
+</AdminShell>
+
+<style>
+  .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 12px; justify-content: space-between; }
+  .pills { display: flex; gap: 6px; }
+  .pills button {
+    border: 0; cursor: pointer; font: 600 .9rem var(--font); padding: 9px 16px; border-radius: 999px;
+    background: var(--ink-100); color: var(--fg-2);
+  }
+  .pills button[aria-checked="true"] { background: var(--fg); color: #fff; }
+  .note { color: var(--fg-3); font-size: .85rem; margin: 10px 0 0; }
+
+  .tiles { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; margin-top: 16px; }
+  :global(.r-tile) { display: grid; gap: 2px; padding: 16px 18px; border-radius: 18px; background: var(--surface); box-shadow: var(--shadow); }
+  :global(.r-tile strong) { font-size: 1.8rem; font-weight: 800; line-height: 1.1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  :global(.r-tile span) { font-size: .85rem; font-weight: 700; color: var(--fg-3); }
+  @media (max-width: 1000px) { .tiles { grid-template-columns: repeat(4, 1fr); } }
+  @media (max-width: 640px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+
+  section { margin-top: 36px; }
+  section h2 { font-size: 1.15rem; margin: 0 0 14px; }
+  .sec-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .sec-head h2 { margin: 0; }
+  .sec-head select { width: auto; }
+  .card { background: var(--surface); box-shadow: var(--shadow); border-radius: 18px; padding: 18px; }
+  .card.scroll { overflow-x: auto; padding: 6px 0; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 860px) { .two { grid-template-columns: 1fr; } }
+
+  /* Users per month: pairs of bars */
+  .bars { display: flex; align-items: flex-end; gap: 10px; height: 200px; }
+  :global(.bar-col) { flex: 1; display: grid; grid-template-rows: 1fr auto; gap: 6px; height: 100%; min-width: 0; }
+  :global(.bar-pair) { display: flex; align-items: flex-end; justify-content: center; gap: 3px; }
+  :global(.bar) { width: 40%; max-width: 22px; border-radius: 5px 5px 2px 2px; min-height: 2px; position: relative; }
+  :global(.bar.new) { background: var(--action); }
+  :global(.bar.active) { background: var(--coral-500); opacity: .55; }
+  :global(.bar-label) { font-size: .72rem; color: var(--fg-3); text-align: center; white-space: nowrap; }
+  :global(.bar-num) { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); font-size: .7rem; font-weight: 700; color: var(--fg-2); padding-bottom: 2px; }
+  .legend { display: flex; gap: 18px; margin-top: 14px; font-size: .82rem; color: var(--fg-3); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .sw.new { background: var(--action); }
+  .sw.active { background: var(--coral-500); opacity: .55; }
+
+  /* Tables */
+  :global(.table) { width: 100%; border-collapse: collapse; font-size: .88rem; font-variant-numeric: tabular-nums; }
+  :global(.table th) { text-align: right; font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; color: var(--fg-3); padding: 10px 14px; white-space: nowrap; }
+  :global(.table td) { text-align: right; padding: 9px 14px; border-top: 1px solid var(--ink-100); white-space: nowrap; }
+  :global(.table th:first-child), :global(.table td:first-child) { text-align: left; }
+  :global(.table td small) { color: var(--fg-3); }
+  :global(.table .zero) { color: var(--ink-200); }
+
+  /* Horizontal bar rows (countries, setup) */
+  :global(.hrow) { display: grid; grid-template-columns: minmax(120px, 34%) 1fr auto; align-items: center; gap: 12px; padding: 6px 0; font-size: .9rem; }
+  :global(.hrow .track) { height: 8px; border-radius: 999px; background: var(--ink-100); overflow: hidden; }
+  :global(.hrow .fill) { height: 100%; border-radius: 999px; background: var(--action); }
+  :global(.hrow b) { font-variant-numeric: tabular-nums; min-width: 64px; text-align: right; }
+  :global(.hrow b small) { color: var(--fg-3); font-weight: 600; }
+  :global(.empty) { color: var(--fg-3); margin: 0; }
+</style>
+
+<script>
+  import type { SupabaseClient } from '@supabase/supabase-js';
+  import { el, add, initAdmin, showError } from '../../lib/admin';
+
+  type Month = {
+    month: string; new_users: number; active_users: number; jumps: number; jumps_log: number; jumps_backfill: number;
+    jumps_import: number; jumpers_logging: number; tunnel_sessions: number; messages: number; chatters: number;
+    sign_requests: number; jumps_signed: number; friendships: number; posts: number; reviews: number;
+  };
+  type Report = {
+    generated_at: string;
+    totals: Record<string, number>;
+    monthly: Month[];
+    countries: { month: string; code: string | null; dz_country: string | null; users: number }[];
+    setup: Record<string, number>;
+    top_dzs: { dz: string; jumps: number; jumpers: number }[];
+  };
+
+  let sb: SupabaseClient;
+  let months = 12;
+  let report: Report | null = null;
+  const q = <T extends Element>(s: string) => document.querySelector<T>(s)!;
+  const nf = (n: number) => n.toLocaleString('de-CH');
+  const monthName = (m: string) => new Date(`${m}-01T00:00:00`).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+
+  // Countries: the app stores ISO codes ("CH"), DZs a name ("Switzerland") —
+  // both become one English name with a flag.
+  const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
+  const nameToCode = new Map<string, string>();
+  for (let a = 65; a <= 90; a++) for (let b = 65; b <= 90; b++) {
+    const code = String.fromCharCode(a, b);
+    try { const n = regionNames.of(code); if (n && n !== code) nameToCode.set(n.toLowerCase(), code); } catch {}
+  }
+  for (const [alias, code] of Object.entries({ usa: 'US', 'united states of america': 'US', uk: 'GB', 'great britain': 'GB', england: 'GB', 'czech republic': 'CZ', holland: 'NL', 'the netherlands': 'NL', 'south korea': 'KR', russia: 'RU', 'türkiye': 'TR', turkey: 'TR' }))
+    nameToCode.set(alias, code);
+  const flag = (code: string) => String.fromCodePoint(...[...code].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
+  function countryOf(code: string | null, dzCountry: string | null): { key: string; label: string } {
+    const c = code ?? (dzCountry ? nameToCode.get(dzCountry.trim().toLowerCase()) : undefined);
+    if (c) return { key: c, label: `${flag(c)}  ${regionNames.of(c) ?? c}` };
+    if (dzCountry) return { key: dzCountry, label: dzCountry };
+    return { key: '?', label: 'Unknown' };
+  }
+
+  function paintPeriod() {
+    document.querySelectorAll<HTMLButtonElement>('[data-months]').forEach((b) => b.setAttribute('aria-checked', String(Number(b.dataset.months) === months)));
+  }
+
+  async function load() {
+    paintPeriod();
+    const { data, error } = await sb.rpc('admin_report', { p_months: months });
+    if (error) { showError(error.message.includes('admin_report') ? 'Reports need migration 0101 on this database.' : error.message); return; }
+    report = data as Report;
+    render();
+  }
+
+  function render() {
+    if (!report) return;
+    const r = report;
+    q('[data-generated]').textContent = `As of ${new Date(r.generated_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })} · bot test accounts left out`;
+
+    // Tiles
+    const tiles = q<HTMLElement>('[data-tiles]');
+    tiles.replaceChildren(...([
+      ['users', 'Users'], ['active_7d', 'Active · 7 days'], ['active_30d', 'Active · 30 days'], ['jumps', 'Jumps'],
+      ['tunnel_sessions', 'Tunnel sessions'], ['messages', 'Messages'], ['signed_jumps', 'Signed jumps'],
+    ] as const).map(([k, label]) => el('div', { class: 'r-tile' }, el('strong', {}, nf(r.totals[k] ?? 0)), el('span', {}, label))));
+
+    // Users per month bars
+    const max = Math.max(1, ...r.monthly.map((m) => Math.max(m.new_users, m.active_users)));
+    q('[data-user-bars]').replaceChildren(...r.monthly.map((m) => {
+      const bar = (cls: string, v: number) => {
+        const b = el('div', { class: `bar ${cls}`, title: `${v}` });
+        b.style.height = `${(v / max) * 100}%`;
+        if (v > 0) b.append(el('span', { class: 'bar-num' }, String(v)));
+        return b;
+      };
+      return el('div', { class: 'bar-col' },
+        el('div', { class: 'bar-pair' }, bar('new', m.new_users), bar('active', m.active_users)),
+        el('div', { class: 'bar-label' }, monthName(m.month)));
+    }));
+
+    // Monthly table, newest first
+    const cols: [keyof Month | 'jumps_split', string][] = [
+      ['month', 'Month'], ['new_users', 'New users'], ['active_users', 'Active'], ['jumps_split', 'Jumps (log · old · import)'],
+      ['jumpers_logging', 'Jumpers logging'], ['tunnel_sessions', 'Tunnel'], ['messages', 'Messages'], ['chatters', 'Chatting'],
+      ['sign_requests', 'Sign requests'], ['jumps_signed', 'Signed'], ['friendships', 'Friendships'], ['posts', 'Posts'], ['reviews', 'Reviews'],
+    ];
+    const num = (v: number) => el('td', { class: v ? undefined : 'zero' }, nf(v));
+    const table = q<HTMLTableElement>('[data-monthly]');
+    table.replaceChildren(
+      el('thead', {}, el('tr', {}, ...cols.map(([, h]) => el('th', {}, h)))),
+      el('tbody', {}, ...[...r.monthly].reverse().map((m) => el('tr', {}, ...cols.map(([k]) => {
+        if (k === 'month') return el('td', {}, el('strong', {}, monthName(m.month)));
+        if (k === 'jumps_split') return el('td', { class: m.jumps ? undefined : 'zero' }, nf(m.jumps), m.jumps ? el('small', {}, `  ${m.jumps_log} · ${m.jumps_backfill} · ${m.jumps_import}`) : null);
+        return num(m[k] as number);
+      })))),
+    );
+
+    renderCountries();
+
+    // Setup funnel
+    const s = r.setup;
+    const total = Math.max(1, s.accounts ?? 0);
+    const steps: [string, string][] = [
+      ['accounts', 'Account created'], ['with_name', 'Name set'], ['with_home_dz', 'Home DZ set'], ['with_skills', 'Skills rated'],
+      ['with_photo', 'Profile photo'], ['with_gear', 'Gear added'], ['with_license', 'License added'],
+      ['with_entry', 'First jump / session'], ['with_10_jumps', '10+ jumps in Arc'], ['with_friend', 'Has a friend'], ['with_message', 'Sent a message'],
+    ];
+    q('[data-setup]').replaceChildren(...steps.map(([k, label]) => hrow(label, s[k] ?? 0, total, true)));
+
+    // Top DZs
+    const top = q<HTMLTableElement>('[data-top-dzs]');
+    top.replaceChildren(
+      el('thead', {}, el('tr', {}, el('th', {}, 'Dropzone'), el('th', {}, 'Jumps added'), el('th', {}, 'Jumpers'))),
+      el('tbody', {}, ...(r.top_dzs.length ? r.top_dzs.map((d) => el('tr', {}, el('td', {}, d.dz), num(d.jumps), num(d.jumpers)))
+        : [el('tr', {}, el('td', { colSpan: 3 }, el('span', { class: 'empty' }, 'No jumps in the last 30 days.')))])),
+    );
+  }
+
+  function hrow(label: string, v: number, of: number, pct: boolean) {
+    const fill = el('div', { class: 'fill' });
+    fill.style.width = `${Math.min(100, (v / Math.max(1, of)) * 100)}%`;
+    return el('div', { class: 'hrow' }, el('span', {}, label), el('div', { class: 'track' }, fill),
+      el('b', {}, nf(v), pct ? el('small', {}, `  ${Math.round((v / Math.max(1, of)) * 100)}%`) : null));
+  }
+
+  function renderCountries() {
+    if (!report) return;
+    const sel = q<HTMLSelectElement>('[data-country-month]');
+    const prev = sel.value || 'all';
+    const ms = [...report.monthly].reverse().map((m) => m.month);
+    sel.replaceChildren(el('option', { value: 'all' }, 'All time'), ...ms.map((m) => el('option', { value: m }, monthName(m))));
+    sel.value = ms.includes(prev) || prev === 'all' ? prev : 'all';
+    const rows = report.countries.filter((c) => sel.value === 'all' || c.month === sel.value);
+    const by = new Map<string, { label: string; users: number }>();
+    for (const c of rows) {
+      const { key, label } = countryOf(c.code, c.dz_country);
+      const cur = by.get(key) ?? { label, users: 0 };
+      cur.users += c.users;
+      by.set(key, cur);
+    }
+    const list = [...by.values()].sort((a, b) => b.users - a.users);
+    const sum = list.reduce((n, c) => n + c.users, 0);
+    const box = q<HTMLElement>('[data-countries]');
+    box.replaceChildren(...(list.length ? list.map((c) => hrow(c.label, c.users, sum, true)) : [el('p', { class: 'empty' }, 'No new users in this month.')]));
+  }
+
+  function downloadCsv() {
+    if (!report) return;
+    const keys = Object.keys(report.monthly[0] ?? {}) as (keyof Month)[];
+    const lines = [keys.join(','), ...report.monthly.map((m) => keys.map((k) => m[k]).join(','))];
+    const a = el('a', { href: URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' })), download: `arc-report-${new Date().toISOString().slice(0, 10)}.csv` });
+    add(document.body, a);
+    a.click();
+    a.remove();
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('[data-months]').forEach((b) => b.addEventListener('click', () => { months = Number(b.dataset.months); load(); }));
+  q('[data-country-month]').addEventListener('change', renderCountries);
+  q('[data-csv]').addEventListener('click', downloadCsv);
+
+  initAdmin((client) => { sb = client; return load(); });
+</script>

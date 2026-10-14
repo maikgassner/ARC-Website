@@ -4,7 +4,7 @@
 // the slot and is only shown once signed in (initAdmin in lib/admin.ts).
 import Base from './Base.astro';
 
-interface Props { title: string; sub: string; active: 'moderation' | 'places' | 'import' }
+interface Props { title: string; sub: string; active: 'moderation' | 'places' | 'import' | 'reports' }
 const { title, sub, active } = Astro.props;
 ---
 <Base title={title} noindex>
@@ -31,6 +31,7 @@ const { title, sub, active } = Astro.props;
       <a href="/admin" class:list={[active === 'moderation' && 'active']}>Moderation</a>
       <a href="/admin/places" class:list={[active === 'places' && 'active']}>Places</a>
       <a href="/admin/import" class:list={[active === 'import' && 'active']}>Import</a>
+      <a href="/admin/reports" class:list={[active === 'reports' && 'active']}>Reports</a>
     </nav>
 
     <form class="login" data-login hidden>
