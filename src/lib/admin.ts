@@ -173,13 +173,18 @@ async function loadDrawable(file: Blob): Promise<{ img: CanvasImageSource; w: nu
   return { img: bmp, w: bmp.width, h: bmp.height };
 }
 
+// 400 px is plenty for every place an avatar shows (lists, map pins, the
+// place header) and keeps the admin list / the app light. Same in the app
+// (ARC/utils/locationPhotos.ts).
+export const AVATAR_PX = 400;
+
 // Profile photos are shown round (map pin, place header), so they're always
 // stored as a filled square. Photos: centre crop. Logos — transparent
 // (PNG/WebP/SVG) or on a plain one-colour background (border all the same
 // colour) — get their margins trimmed and are scaled as big as fits inside
 // the circle, on white (transparent; Arc dark when the logo itself is almost
 // all white, so it doesn't vanish) or on their own background colour.
-export async function toAvatar(file: Blob, size = 800): Promise<Blob> {
+export async function toAvatar(file: Blob, size = AVATAR_PX): Promise<Blob> {
   const { img, w: W, h: H } = await loadDrawable(file);
   const src = document.createElement('canvas');
   src.width = W; src.height = H;
@@ -235,3 +240,17 @@ export async function toAvatar(file: Blob, size = 800): Promise<Blob> {
 // edge function, which is only deployed on PROD — TEST lives in another
 // Supabase org.
 export const PROD_ONLY = 'Website tools only run on PROD — switch to PROD at the top (the edge function isn’t deployed on TEST).';
+
+// Shrinks an already-square profile photo to AVATAR_PX (no re-cropping) —
+// for photos saved before the 400 px limit. null when it's small already.
+export async function shrinkAvatar(blob: Blob): Promise<Blob | null> {
+  const bmp = await createImageBitmap(blob);
+  if (Math.max(bmp.width, bmp.height) <= AVATAR_PX) return null;
+  const scale = AVATAR_PX / Math.max(bmp.width, bmp.height);
+  const c = document.createElement('canvas');
+  c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+  const ctx = c.getContext('2d')!;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bmp, 0, 0, c.width, c.height);
+  return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('Could not encode image'))), 'image/jpeg', 0.86));
+}

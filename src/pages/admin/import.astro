@@ -151,6 +151,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     <div class="toolbar">
       <h2>Profile photos</h2>
       <button type="button" class="ghost-btn" data-find-logos>Find logos</button>
+      <button type="button" class="ghost-btn" data-shrink>Shrink profile photos</button>
       <span class="grow"></span>
       <button type="button" class="primary-btn small" data-save-logos disabled>Save selected</button>
     </div>
@@ -200,7 +201,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
 <script>
   import type { SupabaseClient } from '@supabase/supabase-js';
-  import { el, toast, initAdmin, showError, toAvatar, PROD_ONLY, BUCKET, type Env } from '../../lib/admin';
+  import { el, toast, initAdmin, showError, toAvatar, shrinkAvatar, photoUrl, AVATAR_PX, PROD_ONLY, BUCKET, type Env } from '../../lib/admin';
 
   // south, west, north, east — split so each Overpass query stays fast.
   // south, west, north, east — each region is cut into ~15°×20° tiles below,
@@ -567,6 +568,50 @@ import AdminShell from '../../layouts/AdminShell.astro';
     logoSummary.textContent = `Logos found for ${found} of ${logoRows.length} places. The first option is pre-selected — click another one or “None”, then save.`;
     findLogosBtn.disabled = false;
     renderLogos();
+  });
+
+  // One-off: profile photos saved before the 400 px limit (800 px, ~75 KB
+  // each) made the Places list and the app's lists slow — re-save them small.
+  // Old files stay in storage, like any replaced photo.
+  const shrinkBtn = $<HTMLButtonElement>('[data-shrink]');
+  shrinkBtn.addEventListener('click', async () => {
+    const [dz, tu] = await Promise.all([
+      sb.from('dropzones').select('name, avatar_path').not('avatar_path', 'is', null),
+      sb.from('tunnels').select('name, avatar_path').not('avatar_path', 'is', null),
+    ]);
+    if (dz.error || tu.error) return showError((dz.error || tu.error)!.message);
+    const all = [
+      ...(dz.data ?? []).map((p) => ({ kind: 'dz' as Kind, ...p })),
+      ...(tu.data ?? []).map((p) => ({ kind: 'tunnel' as Kind, ...p })),
+    ];
+    if (!all.length || !confirm(`Check ${all.length} profile photos and re-save the ones bigger than ${AVATAR_PX} px?`)) return;
+    shrinkBtn.disabled = findLogosBtn.disabled = true;
+    const { data: u } = await sb.auth.getUser();
+    let done = 0, shrunk = 0, failed = 0, savedKb = 0;
+    const queue = [...all];
+    const worker = async () => {
+      for (let p = queue.shift(); p; p = queue.shift()) {
+        try {
+          const res = await fetch(photoUrl(env, p.avatar_path));
+          if (!res.ok) throw new Error(String(res.status));
+          const orig = await res.blob();
+          const small = await shrinkAvatar(orig);
+          if (small) {
+            const path = `${u.user?.id}/admin/${slug(p.name)}-avatar-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.jpg`;
+            const up = await sb.storage.from(BUCKET).upload(path, small, { contentType: 'image/jpeg' });
+            if (up.error) throw up.error;
+            const save = await sb.rpc('admin_save_location', { p_kind: p.kind, p_original_name: p.name, p_data: { avatar_path: path } });
+            if (save.error) throw save.error;
+            shrunk++; savedKb += (orig.size - small.size) / 1024;
+          }
+        } catch { failed++; }
+        logoSummary.textContent = `Shrinking profile photos… ${++done} / ${all.length}`;
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    logoSummary.textContent = `Done: ${shrunk} profile photos re-saved at ${AVATAR_PX} px (${(savedKb / 1024).toFixed(1)} MB lighter), ${all.length - shrunk - failed} were small already${failed ? `, ${failed} failed — run it again` : ''}.`;
+    shrinkBtn.disabled = findLogosBtn.disabled = false;
+    toast(`✓ ${shrunk} profile photos shrunk`);
   });
 
   saveLogosBtn.addEventListener('click', async () => {
