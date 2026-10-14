@@ -536,9 +536,25 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
   // Prefer the address from the place's own site (geocoded like the editor
   // does); the OSM pin is only the fallback when that fails or lands far away.
+  // Nominatim (OpenStreetMap) first — Photon's public server is sometimes
+  // ~30 s slow. Nominatim allows at most 1 request per second, so lookups
+  // here queue through one throttle even with 3 imports running at once.
+  let nominatimNext = 0;
+  async function nominatim(path: string): Promise<any> {
+    const wait = Math.max(0, nominatimNext - Date.now());
+    nominatimNext = Math.max(Date.now(), nominatimNext) + 1100;
+    if (wait) await new Promise((ok) => setTimeout(ok, wait));
+    const res = await fetch(`https://nominatim.openstreetmap.org/${path}&format=jsonv2&addressdetails=1&accept-language=en`, { signal: AbortSignal.timeout(8000) });
+    return res.ok ? res.json() : null;
+  }
+  const townOf = (a: any) => a?.city ?? a?.town ?? a?.village ?? a?.hamlet ?? a?.municipality;
   async function geocode(address: string): Promise<{ lat: number; lng: number; country?: string; city?: string } | null> {
     try {
-      const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(address)}&limit=1&lang=en`);
+      const n = (await nominatim(`search?q=${encodeURIComponent(address)}&limit=1`))?.[0];
+      if (n) return { lat: Number(n.lat), lng: Number(n.lon), country: n.address?.country, city: townOf(n.address) };
+    } catch {}
+    try {
+      const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(address)}&limit=1&lang=en`, { signal: AbortSignal.timeout(8000) });
       const f = res.ok ? (await res.json()).features?.[0] : null;
       return f ? { lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], country: f.properties?.country, city: f.properties?.city ?? f.properties?.town ?? f.properties?.village } : null;
     } catch { return null; }
@@ -599,10 +615,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   }
 
   async function reverseCountry(p: { lat: number; lng: number }): Promise<string | null> {
-    try {
-      const res = await fetch(`https://photon.komoot.io/reverse?lat=${p.lat}&lon=${p.lng}&lang=en`);
-      return res.ok ? (await res.json()).features?.[0]?.properties?.country ?? null : null;
-    } catch { return null; }
+    try { return (await nominatim(`reverse?lat=${p.lat}&lon=${p.lng}`))?.address?.country ?? null; } catch { return null; }
   }
 
   importBtn.addEventListener('click', async () => {

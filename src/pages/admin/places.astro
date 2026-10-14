@@ -397,7 +397,10 @@ import AdminShell from '../../layouts/AdminShell.astro';
     return parts.join(' · ');
   }
 
-  // ---------- Address search (Photon / OpenStreetMap — free, no key) ----------
+  // ---------- Address search (OpenStreetMap — free, no key) ----------
+  // Photon for search-as-you-type (Nominatim's policy forbids autocomplete),
+  // Nominatim for single lookups — pin → address, and Enter in the field —
+  // because Photon's public server is sometimes ~30 s slow. Both time out.
   type Geo = { lat: number; lng: number; p: Record<string, any> };
   const cityOf = (p: Record<string, any>) => p.city ?? p.town ?? p.village ?? p.locality ?? p.district ?? p.county ?? '';
   function formatAddress(p: Record<string, any>): string {
@@ -406,14 +409,39 @@ import AdminShell from '../../layouts/AdminShell.astro';
     return [p.name && p.name !== p.street ? p.name : '', street, town, p.country].filter(Boolean).join(', ');
   }
   const toGeo = (f: any): Geo => ({ lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], p: f.properties ?? {} });
+  const getJson = async (url: string, ms: number) => {
+    const res = await fetch(url, { signal: AbortSignal.timeout(ms) });
+    return res.ok ? res.json() : null;
+  };
+  // Nominatim result → the same shape as Photon's properties.
+  const fromNominatim = (n: any): Geo => {
+    const a = n.address ?? {};
+    return {
+      lat: Number(n.lat), lng: Number(n.lon),
+      p: {
+        name: n.name || undefined, street: a.road ?? a.pedestrian ?? a.footway, housenumber: a.house_number, postcode: a.postcode,
+        city: a.city ?? a.town ?? a.village ?? a.hamlet ?? a.municipality, county: a.county, country: a.country, countrycode: a.country_code,
+      },
+    };
+  };
+  const NOMINATIM = 'https://nominatim.openstreetmap.org';
   async function searchAddress(q: string): Promise<Geo[]> {
-    const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=en`);
-    return res.ok ? ((await res.json()).features ?? []).map(toGeo) : [];
+    const d = await getJson(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=en`, 8000);
+    return (d?.features ?? []).map(toGeo);
+  }
+  async function searchAddressNow(q: string): Promise<Geo[]> {
+    const d = await getJson(`${NOMINATIM}/search?q=${encodeURIComponent(q)}&format=jsonv2&addressdetails=1&limit=6&accept-language=en`, 8000);
+    return Array.isArray(d) ? d.map(fromNominatim) : [];
   }
   async function reverseGeocode(lat: number, lng: number): Promise<Geo | null> {
-    const res = await fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&lang=en`);
-    const f = res.ok ? (await res.json()).features?.[0] : null;
-    return f ? { lat, lng, p: f.properties ?? {} } : null;
+    try {
+      const n = await getJson(`${NOMINATIM}/reverse?lat=${lat}&lon=${lng}&format=jsonv2&addressdetails=1&accept-language=en`, 6000);
+      if (n && !n.error) return { ...fromNominatim(n), lat, lng };
+    } catch {}
+    try {
+      const f = (await getJson(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&lang=en`, 8000))?.features?.[0];
+      return f ? { lat, lng, p: f.properties ?? {} } : null;
+    } catch { return null; }
   }
   // Name / search text in a Google Maps link (…/maps/place/Skydive+Hohenems/@…
   // or …/maps?q=…) — the address fallback when the pin has no street address.
@@ -804,7 +832,9 @@ import AdminShell from '../../layouts/AdminShell.astro';
       if (q.length < 3) { results = []; paintList(); return; }
       timer = window.setTimeout(async () => {
         const mine = ++seq;
+        pin.textContent = 'Searching… (Enter searches right away)';
         try { const r = await searchAddress(q); if (mine === seq) { results = r; active = -1; paintList(); } } catch {}
+        if (mine === seq) paintPin();
       }, 300);
     });
     // Pin from coordinates / a long Google Maps URL. The address text comes
@@ -818,10 +848,16 @@ import AdminShell from '../../layouts/AdminShell.astro';
         toast('No coordinates in that link — try “Share → Copy link” or paste “lat, lng”.');
         return;
       }
+      // Pin right away (with the place name as address text); the street
+      // address and country follow from the reverse lookup.
+      choose({ lat: coords[0], lng: coords[1], p: {} });
+      input.value = vals.address = place || `${coords[0].toFixed(5)}, ${coords[1].toFixed(5)}`;
+      toast('📍 Pin set from the link — looking up the address…');
       const g = await reverseGeocode(coords[0], coords[1]).catch(() => null);
-      choose(g ? { ...g, lat: coords[0], lng: coords[1] } : { lat: coords[0], lng: coords[1], p: {} });
-      if (!vals.address || /^https?:/i.test(vals.address)) input.value = vals.address = place || `${coords[0].toFixed(5)}, ${coords[1].toFixed(5)}`;
-      else if (place && !vals.address.toLowerCase().includes(place.toLowerCase())) input.value = vals.address = `${place}, ${vals.address}`;
+      if (vals.lat !== +coords[0].toFixed(6) || vals.lng !== +coords[1].toFixed(6)) return; // pin changed meanwhile
+      if (!g) { toast('📍 Pin set — no address found there, check the country'); return; }
+      choose({ ...g, lat: coords[0], lng: coords[1] });
+      if (place && !vals.address.toLowerCase().includes(place.toLowerCase())) input.value = vals.address = `${place}, ${vals.address}`;
       toast('📍 Pin set from the link — check the address text');
     }
     // maps.app.goo.gl/… share links carry no coordinates; the edge function
@@ -839,7 +875,20 @@ import AdminShell from '../../layouts/AdminShell.astro';
       await useMapsUrl(data.url);
     }
 
-    input.addEventListener('keydown', (e) => {
+    input.addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter' && (list.hidden || !results.length)) {
+        e.preventDefault();
+        const q = input.value.trim();
+        if (q.length < 3 || urlIn(q)) return;
+        const mine = ++seq;
+        pin.textContent = 'Searching…';
+        const r = await searchAddressNow(q).catch(() => []);
+        if (mine !== seq) return;
+        paintPin();
+        results = r; active = -1; paintList();
+        if (!r.length) toast('No address found — try street, town and country');
+        return;
+      }
       if (list.hidden || !results.length) return;
       if (e.key === 'ArrowDown') { e.preventDefault(); active = (active + 1) % results.length; paintList(); }
       else if (e.key === 'ArrowUp') { e.preventDefault(); active = (active - 1 + results.length) % results.length; paintList(); }
@@ -1049,7 +1098,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     // Address → pin via the same lookup the address field uses.
     if (d.address && (v.lat == null || v.lng == null)) {
       try {
-        const hit = (await searchAddress(d.address))[0];
+        const hit = (await searchAddressNow(d.address))[0] ?? (await searchAddress(d.address))[0];
         if (hit) {
           v.lat = +hit.lat.toFixed(6); v.lng = +hit.lng.toFixed(6);
           v._country = hit.p.country ?? ''; v._city = cityOf(hit.p);
