@@ -1,0 +1,143 @@
+---
+// Support inbox: bug reports and feedback sent from the app's Settings
+// (Report a bug / Share feedback). Data via admin_support_inbox() and
+// admin_set_support_status() (ARC/supabase/migrations/0108). Screenshots
+// come from the private bug-screenshots bucket as signed links.
+import AdminShell from '../../layouts/AdminShell.astro';
+---
+<AdminShell title="Support" sub="Bug reports and feedback from the app." active="support">
+  <div class="toolbar">
+    <div class="pills" role="tablist">
+      <button type="button" role="tab" data-kind="bug" aria-selected="true">Bug reports <span data-count="bug"></span></button>
+      <button type="button" role="tab" data-kind="feedback" aria-selected="false">Feedback <span data-count="feedback"></span></button>
+    </div>
+    <label class="show-done"><input type="checkbox" data-show-done> Show done</label>
+  </div>
+  <div class="list" data-list></div>
+  <p class="empty" data-empty hidden></p>
+</AdminShell>
+
+<style>
+  .toolbar { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 12px; }
+  .pills { display: flex; gap: 6px; }
+  .pills button {
+    border: 0; cursor: pointer; font: 600 .9rem var(--font); padding: 9px 16px; border-radius: 999px;
+    background: var(--ink-100); color: var(--fg-2);
+  }
+  .pills button[aria-selected="true"] { background: var(--fg); color: #fff; }
+  .pills span:not(:empty) { margin-left: 4px; opacity: .75; }
+  .show-done { display: inline-flex; align-items: center; gap: 8px; color: var(--fg-2); font-size: .9rem; cursor: pointer; }
+  .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 16px; margin-top: 18px; }
+  .empty { color: var(--fg-3); margin-top: 32px; text-align: center; }
+
+  :global(.sup-card) { background: var(--surface); border-radius: 18px; box-shadow: var(--shadow); padding: 18px; display: grid; gap: 10px; align-content: start; }
+  :global(.sup-card.done) { opacity: .6; }
+  :global(.sup-head) { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  :global(.sup-tag) { font: 700 .75rem var(--font); padding: 3px 9px; border-radius: 999px; background: var(--coral-50); color: var(--accent-text); }
+  :global(.sup-tag.grey) { background: var(--ink-100); color: var(--fg-2); }
+  :global(.sup-when) { margin-left: auto; color: var(--fg-3); font-size: .82rem; }
+  :global(.sup-text) { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; margin: 0; }
+  :global(.sup-meta) { color: var(--fg-3); font-size: .82rem; overflow-wrap: anywhere; }
+  :global(.sup-meta a) { color: var(--accent-text); }
+  :global(.sup-shots) { display: flex; gap: 8px; flex-wrap: wrap; }
+  :global(.sup-shots img) { width: 88px; height: 88px; object-fit: cover; border-radius: 10px; cursor: zoom-in; background: var(--ink-100); }
+  :global(.sup-actions) { display: flex; justify-content: flex-end; }
+  :global(.sup-btn) { border: 0; cursor: pointer; font: 700 .85rem var(--font); padding: 9px 16px; border-radius: 999px; background: var(--fg); color: #fff; }
+  :global(.sup-btn.ghost) { background: var(--ink-100); color: var(--fg); }
+</style>
+
+<script>
+  import type { SupabaseClient } from '@supabase/supabase-js';
+  import { el, initAdmin, showError, openLightbox, toast } from '../../lib/admin';
+
+  type Bug = { id: string; area: string; description: string; screenshots: string[]; device: string | null; status: string; created_at: string; name: string | null };
+  type Feedback = { id: string; mood: string | null; topic: string | null; message: string; status: string; created_at: string; name: string | null; email: string | null };
+
+  let sb: SupabaseClient;
+  let kind: 'bug' | 'feedback' = 'bug';
+  let inbox: { bugs: Bug[]; feedback: Feedback[] } = { bugs: [], feedback: [] };
+  const q = <T extends Element>(s: string) => document.querySelector<T>(s)!;
+  const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+
+  async function load() {
+    const { data, error } = await sb.rpc('admin_support_inbox');
+    if (error) { showError(error.message.includes('admin_support_inbox') ? 'The support inbox needs migration 0108 on this database.' : error.message); return; }
+    inbox = data;
+    render();
+  }
+
+  async function setStatus(k: 'bug' | 'feedback', id: string, status: 'new' | 'done') {
+    const { error } = await sb.rpc('admin_set_support_status', { p_kind: k, p_id: id, p_status: status });
+    if (error) { toast(error.message); return; }
+    const list = k === 'bug' ? inbox.bugs : inbox.feedback;
+    const item = list.find(i => i.id === id);
+    if (item) item.status = status;
+    toast(status === 'done' ? 'Marked done' : 'Opened again');
+    render();
+  }
+
+  function actions(k: 'bug' | 'feedback', id: string, status: string) {
+    const done = status === 'done';
+    return el('div', { class: 'sup-actions' },
+      el('button', { type: 'button', class: done ? 'sup-btn ghost' : 'sup-btn', onclick: () => setStatus(k, id, done ? 'new' : 'done') }, done ? 'Open again' : 'Mark done'));
+  }
+
+  function bugCard(b: Bug) {
+    const shots = el('div', { class: 'sup-shots' });
+    // Private bucket: signed links (admins may read it, 0108).
+    for (const path of b.screenshots) {
+      const img = el('img', { alt: 'Screenshot' });
+      shots.append(img);
+      sb.storage.from('bug-screenshots').createSignedUrl(path, 3600).then(({ data }) => {
+        if (!data?.signedUrl) return;
+        img.src = data.signedUrl;
+        img.addEventListener('click', () => openLightbox(data.signedUrl));
+      });
+    }
+    return el('article', { class: `sup-card${b.status === 'done' ? ' done' : ''}` },
+      el('div', { class: 'sup-head' },
+        b.area ? el('span', { class: 'sup-tag' }, b.area) : null,
+        b.status === 'done' ? el('span', { class: 'sup-tag grey' }, 'Done') : null,
+        el('span', { class: 'sup-when' }, when(b.created_at))),
+      el('p', { class: 'sup-text' }, b.description || '(no description)'),
+      b.screenshots.length ? shots : null,
+      el('div', { class: 'sup-meta' }, [b.name ? `From ${b.name}` : 'From a deleted account', b.device].filter(Boolean).join(' · ')),
+      actions('bug', b.id, b.status));
+  }
+
+  function feedbackCard(f: Feedback) {
+    const meta = el('div', { class: 'sup-meta' }, f.name ? `From ${f.name}` : 'From a deleted account');
+    if (f.email) meta.append(' · ', el('a', { href: `mailto:${f.email}` }, f.email));
+    else meta.append(' · no contact wanted');
+    return el('article', { class: `sup-card${f.status === 'done' ? ' done' : ''}` },
+      el('div', { class: 'sup-head' },
+        f.topic ? el('span', { class: 'sup-tag' }, f.topic) : null,
+        f.mood ? el('span', { class: 'sup-tag grey' }, f.mood) : null,
+        f.status === 'done' ? el('span', { class: 'sup-tag grey' }, 'Done') : null,
+        el('span', { class: 'sup-when' }, when(f.created_at))),
+      el('p', { class: 'sup-text' }, f.message || '(empty)'),
+      meta,
+      actions('feedback', f.id, f.status));
+  }
+
+  function render() {
+    const showDone = q<HTMLInputElement>('[data-show-done]').checked;
+    const openBugs = inbox.bugs.filter(b => b.status !== 'done').length;
+    const openFeedback = inbox.feedback.filter(f => f.status !== 'done').length;
+    q('[data-count="bug"]').textContent = openBugs ? String(openBugs) : '';
+    q('[data-count="feedback"]').textContent = openFeedback ? String(openFeedback) : '';
+    document.querySelectorAll<HTMLButtonElement>('[data-kind]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.kind === kind)));
+    const items = kind === 'bug'
+      ? inbox.bugs.filter(b => showDone || b.status !== 'done').map(bugCard)
+      : inbox.feedback.filter(f => showDone || f.status !== 'done').map(feedbackCard);
+    q('[data-list]').replaceChildren(...items);
+    const empty = q<HTMLElement>('[data-empty]');
+    empty.hidden = items.length > 0;
+    empty.textContent = kind === 'bug' ? 'No open bug reports.' : 'No open feedback.';
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('[data-kind]').forEach(b => b.addEventListener('click', () => { kind = b.dataset.kind as 'bug' | 'feedback'; render(); }));
+  q('[data-show-done]').addEventListener('change', render);
+
+  initAdmin(client => { sb = client; return load(); });
+</script>
