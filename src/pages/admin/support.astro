@@ -3,6 +3,8 @@
 // (Report a bug / Share feedback). Data via admin_support_inbox() and
 // admin_set_support_status() (ARC/supabase/migrations/0108). Screenshots
 // come from the private bug-screenshots bucket as signed links.
+// "Reply in Arc" writes to the person in their Arc messages as "Arc"
+// (admin_support_send / _conversation / _conversations, 0109).
 import AdminShell from '../../layouts/AdminShell.astro';
 ---
 <AdminShell title="Support" sub="Bug reports and feedback from the app." active="support">
@@ -10,11 +12,25 @@ import AdminShell from '../../layouts/AdminShell.astro';
     <div class="pills" role="tablist">
       <button type="button" role="tab" data-kind="bug" aria-selected="true">Bug reports <span data-count="bug"></span></button>
       <button type="button" role="tab" data-kind="feedback" aria-selected="false">Feedback <span data-count="feedback"></span></button>
+      <button type="button" role="tab" data-kind="chats" aria-selected="false">Conversations <span data-count="chats"></span></button>
     </div>
     <label class="show-done"><input type="checkbox" data-show-done> Show done</label>
   </div>
   <div class="list" data-list></div>
   <p class="empty" data-empty hidden></p>
+
+  <dialog class="chat" data-chat>
+    <div class="chat-head">
+      <div><span class="chat-from">Arc ·</span> <strong data-chat-name></strong></div>
+      <button type="button" class="chat-close" data-chat-close aria-label="Close">✕</button>
+    </div>
+    <div class="chat-msgs" data-chat-msgs></div>
+    <form class="chat-form" data-chat-form>
+      <textarea data-chat-input rows="3" placeholder="Write as Arc…"></textarea>
+      <button type="submit" class="sup-btn" data-chat-send>Send</button>
+    </form>
+    <p class="chat-hint">Lands in their Arc messages from "Arc", with a push.</p>
+  </dialog>
 </AdminShell>
 
 <style>
@@ -29,6 +45,26 @@ import AdminShell from '../../layouts/AdminShell.astro';
   .show-done { display: inline-flex; align-items: center; gap: 8px; color: var(--fg-2); font-size: .9rem; cursor: pointer; }
   .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 16px; margin-top: 18px; }
   .empty { color: var(--fg-3); margin-top: 32px; text-align: center; }
+
+  .chat { border: 0; border-radius: 20px; padding: 0; width: min(560px, 94vw); max-height: 86vh; box-shadow: var(--shadow); }
+  .chat::backdrop { background: rgba(0,0,0,.35); }
+  .chat[open] { display: flex; flex-direction: column; }
+  .chat-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 18px; border-bottom: 1px solid var(--ink-100); }
+  .chat-from { color: var(--fg-3); font-weight: 600; }
+  .chat-close { border: 0; background: var(--ink-100); border-radius: 999px; width: 32px; height: 32px; cursor: pointer; }
+  .chat-msgs { flex: 1; overflow-y: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; min-height: 160px; background: var(--bg); }
+  :global(.bubble) { max-width: 80%; padding: 9px 13px; border-radius: 16px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; font-size: .95rem; }
+  :global(.bubble.arc) { align-self: flex-end; background: var(--action); color: #fff; border-bottom-right-radius: 6px; }
+  :global(.bubble.them) { align-self: flex-start; background: var(--surface); box-shadow: var(--shadow); border-bottom-left-radius: 6px; }
+  :global(.bubble small) { display: block; opacity: .7; font-size: .72rem; margin-top: 3px; }
+  :global(.chat-empty) { color: var(--fg-3); text-align: center; margin: auto; }
+  .chat-form { display: flex; gap: 10px; padding: 12px 18px 4px; align-items: flex-end; }
+  .chat-form textarea { flex: 1; resize: vertical; font: inherit; padding: 10px 12px; border-radius: 14px; border: 1.5px solid var(--border); }
+  .chat-hint { color: var(--fg-3); font-size: .78rem; padding: 0 18px 14px; margin: 4px 0 0; }
+  :global(.conv-row) { display: flex; gap: 12px; align-items: center; width: 100%; text-align: left; cursor: pointer; border: 0; font: inherit; background: var(--surface); box-shadow: var(--shadow); border-radius: 18px; padding: 14px 16px; color: var(--fg); }
+  :global(.conv-row strong) { display: block; }
+  :global(.conv-row .sup-meta) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  :global(.conv-unread) { margin-left: auto; background: var(--action); color: #fff; border-radius: 999px; font: 700 .75rem var(--font); padding: 3px 9px; }
 
   :global(.sup-card) { background: var(--surface); border-radius: 18px; box-shadow: var(--shadow); padding: 18px; display: grid; gap: 10px; align-content: start; }
   :global(.sup-card.done) { opacity: .6; }
@@ -50,12 +86,15 @@ import AdminShell from '../../layouts/AdminShell.astro';
   import type { SupabaseClient } from '@supabase/supabase-js';
   import { el, initAdmin, showError, openLightbox, toast } from '../../lib/admin';
 
-  type Bug = { id: string; area: string; description: string; screenshots: string[]; device: string | null; status: string; created_at: string; name: string | null };
-  type Feedback = { id: string; mood: string | null; topic: string | null; message: string; status: string; created_at: string; name: string | null; email: string | null };
+  type Conversation = { user_id: string; name: string | null; last_body: string; last_from_arc: boolean; last_at: string; unread: number };
+  type Bug = { id: string; user_id: string | null; area: string; description: string; screenshots: string[]; device: string | null; status: string; created_at: string; name: string | null };
+  type Feedback = { id: string; user_id: string | null; mood: string | null; topic: string | null; message: string; status: string; created_at: string; name: string | null; email: string | null };
 
   let sb: SupabaseClient;
-  let kind: 'bug' | 'feedback' = 'bug';
-  let inbox: { bugs: Bug[]; feedback: Feedback[] } = { bugs: [], feedback: [] };
+  let kind: 'bug' | 'feedback' | 'chats' = 'bug';
+  let inbox: { bugs: Bug[]; feedback: Feedback[]; support_ready?: boolean } = { bugs: [], feedback: [] };
+  let conversations: Conversation[] = [];
+  let chatUser: string | null = null;
   const q = <T extends Element>(s: string) => document.querySelector<T>(s)!;
   const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -63,7 +102,59 @@ import AdminShell from '../../layouts/AdminShell.astro';
     const { data, error } = await sb.rpc('admin_support_inbox');
     if (error) { showError(error.message.includes('admin_support_inbox') ? 'The support inbox needs migration 0108 on this database.' : error.message); return; }
     inbox = data;
+    if (inbox.support_ready) {
+      const { data: convs } = await sb.rpc('admin_support_conversations');
+      conversations = (convs ?? []) as Conversation[];
+    }
     render();
+  }
+
+  // ── Chat as Arc ─────────────────────────────────────────────────
+  const chat = q<HTMLDialogElement>('[data-chat]');
+  async function openChat(userId: string, name: string | null) {
+    chatUser = userId;
+    q('[data-chat-name]').textContent = name ?? 'Arc user';
+    q('[data-chat-msgs]').replaceChildren(el('p', { class: 'chat-empty' }, 'Loading…'));
+    if (!chat.open) chat.showModal();
+    await loadChat();
+    q<HTMLTextAreaElement>('[data-chat-input]').focus();
+  }
+  async function loadChat() {
+    if (!chatUser) return;
+    const { data, error } = await sb.rpc('admin_support_conversation', { p_user: chatUser });
+    if (error) { toast(error.message); return; }
+    const msgs = (data?.messages ?? []) as { from_arc: boolean; type: string; body: string | null; created_at: string }[];
+    const box = q<HTMLElement>('[data-chat-msgs]');
+    box.replaceChildren(...(msgs.length
+      ? msgs.map(m => el('div', { class: `bubble ${m.from_arc ? 'arc' : 'them'}` },
+          m.body || (m.type === 'post_share' ? '(shared a post)' : m.type === 'sign_request' || m.type === 'multi_sign_request' ? '(sign request)' : '(message)'),
+          el('small', {}, when(m.created_at))))
+      : [el('p', { class: 'chat-empty' }, 'No messages yet. Say hi as Arc.')]));
+    box.scrollTop = box.scrollHeight;
+    const conv = conversations.find(c => c.user_id === chatUser);
+    if (conv) { conv.unread = 0; render(); }
+  }
+  q('[data-chat-close]').addEventListener('click', () => chat.close());
+  q('[data-chat-form]').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = q<HTMLTextAreaElement>('[data-chat-input]');
+    const body = input.value.trim();
+    if (!body || !chatUser) return;
+    const btn = q<HTMLButtonElement>('[data-chat-send]');
+    btn.disabled = true;
+    const { error } = await sb.rpc('admin_support_send', { p_user: chatUser, p_body: body });
+    btn.disabled = false;
+    if (error) { toast(error.message); return; }
+    input.value = '';
+    await loadChat();
+    const { data: convs } = await sb.rpc('admin_support_conversations');
+    conversations = (convs ?? []) as Conversation[];
+    render();
+  });
+
+  function replyButton(userId: string | null, name: string | null) {
+    if (!userId || !inbox.support_ready) return null;
+    return el('button', { type: 'button', class: 'sup-btn ghost', onclick: () => openChat(userId, name) }, 'Reply in Arc');
   }
 
   async function setStatus(k: 'bug' | 'feedback', id: string, status: 'new' | 'done') {
@@ -76,9 +167,10 @@ import AdminShell from '../../layouts/AdminShell.astro';
     render();
   }
 
-  function actions(k: 'bug' | 'feedback', id: string, status: string) {
+  function actions(k: 'bug' | 'feedback', id: string, status: string, userId: string | null, name: string | null) {
     const done = status === 'done';
     return el('div', { class: 'sup-actions' },
+      replyButton(userId, name),
       el('button', { type: 'button', class: done ? 'sup-btn ghost' : 'sup-btn', onclick: () => setStatus(k, id, done ? 'new' : 'done') }, done ? 'Open again' : 'Mark done'));
   }
 
@@ -102,7 +194,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
       el('p', { class: 'sup-text' }, b.description || '(no description)'),
       b.screenshots.length ? shots : null,
       el('div', { class: 'sup-meta' }, [b.name ? `From ${b.name}` : 'From a deleted account', b.device].filter(Boolean).join(' · ')),
-      actions('bug', b.id, b.status));
+      actions('bug', b.id, b.status, b.user_id, b.name));
   }
 
   function feedbackCard(f: Feedback) {
@@ -117,7 +209,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
         el('span', { class: 'sup-when' }, when(f.created_at))),
       el('p', { class: 'sup-text' }, f.message || '(empty)'),
       meta,
-      actions('feedback', f.id, f.status));
+      actions('feedback', f.id, f.status, f.user_id, f.name));
   }
 
   function render() {
@@ -126,6 +218,21 @@ import AdminShell from '../../layouts/AdminShell.astro';
     const openFeedback = inbox.feedback.filter(f => f.status !== 'done').length;
     q('[data-count="bug"]').textContent = openBugs ? String(openBugs) : '';
     q('[data-count="feedback"]').textContent = openFeedback ? String(openFeedback) : '';
+    const unreadChats = conversations.reduce((n, c) => n + (c.unread > 0 ? 1 : 0), 0);
+    q('[data-count="chats"]').textContent = unreadChats ? String(unreadChats) : '';
+    q<HTMLElement>('.show-done').hidden = kind === 'chats';
+    if (kind === 'chats') {
+      const rows = conversations.map(c => el('button', { type: 'button', class: 'conv-row', onclick: () => openChat(c.user_id, c.name) },
+        el('div', { style: 'min-width:0' },
+          el('strong', {}, c.name ?? 'Arc user'),
+          el('div', { class: 'sup-meta' }, `${c.last_from_arc ? 'Arc: ' : ''}${c.last_body ?? ''} · ${when(c.last_at)}`)),
+        c.unread > 0 ? el('span', { class: 'conv-unread' }, `${c.unread} new`) : null));
+      q('[data-list]').replaceChildren(...rows);
+      const empty = q<HTMLElement>('[data-empty]');
+      empty.hidden = rows.length > 0;
+      empty.textContent = inbox.support_ready ? 'No conversations yet. Use "Reply in Arc" on a bug report or feedback.' : 'The Arc support account isn’t set up on this database yet (app_settings.support_user_id).';
+      return;
+    }
     document.querySelectorAll<HTMLButtonElement>('[data-kind]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.kind === kind)));
     const items = kind === 'bug'
       ? inbox.bugs.filter(b => showDone || b.status !== 'done').map(bugCard)
@@ -136,7 +243,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     empty.textContent = kind === 'bug' ? 'No open bug reports.' : 'No open feedback.';
   }
 
-  document.querySelectorAll<HTMLButtonElement>('[data-kind]').forEach(b => b.addEventListener('click', () => { kind = b.dataset.kind as 'bug' | 'feedback'; render(); }));
+  document.querySelectorAll<HTMLButtonElement>('[data-kind]').forEach(b => b.addEventListener('click', () => { kind = b.dataset.kind as typeof kind; render(); }));
   q('[data-show-done]').addEventListener('change', render);
 
   initAdmin(client => { sb = client; return load(); });
