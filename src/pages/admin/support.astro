@@ -95,6 +95,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   let inbox: { bugs: Bug[]; feedback: Feedback[]; support_ready?: boolean } = { bugs: [], feedback: [] };
   let conversations: Conversation[] = [];
   let chatUser: string | null = null;
+  let chatSig = '';
   const q = <T extends Element>(s: string) => document.querySelector<T>(s)!;
   const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -113,6 +114,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   const chat = q<HTMLDialogElement>('[data-chat]');
   async function openChat(userId: string, name: string | null) {
     chatUser = userId;
+    chatSig = '';
     q('[data-chat-name]').textContent = name ?? 'Arc user';
     q('[data-chat-msgs]').replaceChildren(el('p', { class: 'chat-empty' }, 'Loading…'));
     if (!chat.open) chat.showModal();
@@ -125,6 +127,10 @@ import AdminShell from '../../layouts/AdminShell.astro';
     if (error) { toast(error.message); return; }
     const msgs = (data?.messages ?? []) as { from_arc: boolean; type: string; body: string | null; created_at: string }[];
     const box = q<HTMLElement>('[data-chat-msgs]');
+    // Polled while open: leave the view (and the scroll position) alone when nothing new came in.
+    const sig = `${msgs.length}:${msgs[msgs.length - 1]?.created_at ?? ''}`;
+    if (sig === chatSig) return;
+    chatSig = sig;
     box.replaceChildren(...(msgs.length
       ? msgs.map(m => el('div', { class: `bubble ${m.from_arc ? 'arc' : 'them'}` },
           m.body || (m.type === 'post_share' ? '(shared a post)' : m.type === 'sign_request' || m.type === 'multi_sign_request' ? '(sign request)' : '(message)'),
@@ -220,6 +226,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     q('[data-count="feedback"]').textContent = openFeedback ? String(openFeedback) : '';
     const unreadChats = conversations.reduce((n, c) => n + (c.unread > 0 ? 1 : 0), 0);
     q('[data-count="chats"]').textContent = unreadChats ? String(unreadChats) : '';
+    document.title = `${unreadChats ? `(${unreadChats}) ` : ''}${document.title.replace(/^\(\d+\) /, '')}`;
     q<HTMLElement>('.show-done').hidden = kind === 'chats';
     if (kind === 'chats') {
       const rows = conversations.map(c => el('button', { type: 'button', class: 'conv-row', onclick: () => openChat(c.user_id, c.name) },
@@ -245,6 +252,26 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
   document.querySelectorAll<HTMLButtonElement>('[data-kind]').forEach(b => b.addEventListener('click', () => { kind = b.dataset.kind as typeof kind; render(); }));
   q('[data-show-done]').addEventListener('change', render);
+
+  // ── Keeping up without a reload ─────────────────────────────────
+  // Admins aren't participants of Arc's chats, so no realtime here: the
+  // open chat re-checks every 5 s, the conversation list every 30 s (while
+  // the tab is visible). New replies bump the counter, the tab title and a toast.
+  setInterval(() => {
+    if (chat.open && chatUser && document.visibilityState === 'visible') loadChat().catch(() => {});
+  }, 5000);
+  async function refreshConversations() {
+    if (!sb || !inbox.support_ready || document.visibilityState !== 'visible') return;
+    const before = new Map(conversations.map(c => [c.user_id, c.last_at]));
+    const { data } = await sb.rpc('admin_support_conversations');
+    if (!data) return;
+    conversations = data as Conversation[];
+    const fresh = conversations.filter(c => !c.last_from_arc && c.unread > 0 && before.get(c.user_id) !== c.last_at && c.user_id !== chatUser);
+    if (fresh.length) toast(fresh.length === 1 ? `New reply from ${fresh[0].name ?? 'someone'}` : `${fresh.length} new replies`);
+    render();
+  }
+  setInterval(() => { refreshConversations().catch(() => {}); }, 30000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshConversations().catch(() => {}); });
 
   initAdmin(client => { sb = client; return load(); });
 </script>
