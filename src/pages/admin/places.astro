@@ -987,7 +987,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
       const img = webcamImageUrl(url);
       return el('div', { class: 'cam' },
         img ? el('img', { src: img, alt: '', loading: 'lazy' }) : el('span', { class: 'noimg', textContent: 'Web page' }),
-        el('a', { href: url, target: '_blank', rel: 'noopener', title: url, textContent: url.replace(/^https?:\/\/(www\.)?/i, '') }),
+        // Only http(s) links — webcams can come from user suggestions.
+        el('a', { href: /^https?:\/\//i.test(url) ? url : '#', target: '_blank', rel: 'noopener', title: url, textContent: url.replace(/^https?:\/\/(www\.)?/i, '') }),
         el('button', { type: 'button', class: 'mini-btn', textContent: 'Remove', onclick: () => { setVal('webcams', read().filter((_, j) => j !== i)); paint(); } }),
       );
     }));
