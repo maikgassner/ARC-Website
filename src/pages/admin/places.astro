@@ -44,6 +44,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     <div class="savebar">
       <span class="savebar-hint" data-save-hint></span>
       <button type="button" class="ghost-btn danger" data-delete hidden>Delete</button>
+      <button type="button" class="ghost-btn" data-convert hidden></button>
       <button type="button" class="ghost-btn" data-cancel>Cancel</button>
       <button type="submit" class="primary-btn" data-save>Save</button>
     </div>
@@ -726,6 +727,9 @@ import AdminShell from '../../layouts/AdminShell.astro';
     $$<HTMLButtonElement>('[data-kind]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.kind === kind)));
     $<HTMLElement>('[data-save-hint]').textContent = original ? '' : 'Name and address are required.';
     $<HTMLButtonElement>('[data-delete]').hidden = !original;
+    const convert = $<HTMLButtonElement>('[data-convert]');
+    convert.hidden = !original;
+    convert.textContent = kind === 'dz' ? 'Make it a tunnel' : 'Make it a dropzone';
   }
 
   // Switching type on a new place keeps whatever both forms share.
@@ -752,6 +756,34 @@ import AdminShell from '../../layouts/AdminShell.astro';
   $<HTMLButtonElement>('[data-back]').addEventListener('click', closeEditor);
   $<HTMLButtonElement>('[data-cancel]').addEventListener('click', closeEditor);
   editor.addEventListener('input', () => { dirty = true; });
+
+  // Wrong type from an import (a tunnel in the dropzone list, or back):
+  // admin_convert_location (0115) moves the shared fields, photos and
+  // reviews; it refuses while logbooks, favourites, home DZs, events or
+  // posts use the name. Kind-specific fields are filled in afterwards.
+  $<HTMLButtonElement>('[data-convert]').addEventListener('click', async () => {
+    if (!editing?.original) return;
+    if (dirty && !confirm('Your unsaved changes will be lost. Continue?')) return;
+    const { kind, original, values } = editing;
+    const target: Kind = kind === 'dz' ? 'tunnel' : 'dz';
+    let location: string | null = null;
+    if (target === 'tunnel') {
+      // "…, 41110 Bollullos de la Mitación, Spain" → "Bollullos de la Mitación, Spain"
+      const parts = String(values.address ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+      const town = parts.length >= 2 ? parts[parts.length - 2].replace(/^[\d\s-]+/, '').trim() : '';
+      const guess = [town, values.country].filter(Boolean).join(', ');
+      location = prompt(`“${original}” becomes a wind tunnel. Its location (town, country):`, guess);
+      if (location === null) return;
+    } else if (!confirm(`“${original}” becomes a dropzone. Tunnel details (size, prices) don't carry over. Continue?`)) return;
+    const { data, error } = await sb.rpc('admin_convert_location', { p_kind: kind, p_name: original, p_location: location });
+    if (error) { toast(`Not converted: ${error.message}`); return; }
+    dirty = false;
+    closeEditor();
+    toast(`${original} is now a ${target === 'dz' ? 'dropzone' : 'wind tunnel'} · ${data}`);
+    await loadPlaces();
+    const moved = places.find((p) => p.kind === target && p.name === original);
+    if (moved) openEditor(target, moved);
+  });
 
   // Mostly for cleaning up bulk imports (/admin/import). Photos, suggestions
   // and reviews of the place go with it (admin_delete_location, 0094).
