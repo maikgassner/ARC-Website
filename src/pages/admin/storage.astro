@@ -1,0 +1,111 @@
+---
+// Storage housekeeping (ARC/supabase/migrations/0117_storage_housekeeping.sql):
+// how much the files and the database use, and the files no row points at
+// any more — deleted here through the Storage API (admins may delete any
+// file). The reports channel warns when a threshold is passed.
+import AdminShell from '../../layouts/AdminShell.astro';
+---
+<AdminShell title="Storage" sub="Files and database — and the files nothing uses any more." active="storage">
+  <div class="tiles" data-tiles></div>
+
+  <section>
+    <h2>Files by bucket</h2>
+    <div class="card scroll"><table class="table" data-buckets></table></div>
+    <p class="note">Plan limits: Supabase Free has 1 GB files and 500 MB database, Pro 100 GB and 8 GB (check the dashboard → Usage for the current numbers). The reports channel warns at app_settings <code>storage_warn_mb</code> / <code>db_warn_mb</code> (default 700 / 350 MB).</p>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Unused files</h2>
+      <button type="button" class="primary-btn small" data-delete hidden></button>
+    </div>
+    <div class="card scroll"><table class="table" data-orphans></table></div>
+    <p class="note">Files older than 7 days that no logbook, profile, place, post, event, document or suggestion points at — mostly earlier versions of a photo that was replaced. Deleting can't be undone.</p>
+  </section>
+</AdminShell>
+
+<style>
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 16px; }
+  :global(.r-tile) { display: grid; gap: 2px; padding: 16px 18px; border-radius: 18px; background: var(--surface); box-shadow: var(--shadow); }
+  :global(.r-tile strong) { font-size: 1.8rem; font-weight: 800; line-height: 1.1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  :global(.r-tile span) { font-size: .85rem; font-weight: 700; color: var(--fg-3); }
+  @media (max-width: 760px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+  section { margin-top: 36px; }
+  section h2 { font-size: 1.15rem; margin: 0 0 14px; }
+  .sec-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .sec-head h2 { margin: 0; }
+  .card { background: var(--surface); box-shadow: var(--shadow); border-radius: 18px; padding: 18px; }
+  .card.scroll { overflow-x: auto; padding: 6px 0; }
+  .note { color: var(--fg-3); font-size: .85rem; margin: 10px 0 0; }
+  :global(.table) { width: 100%; border-collapse: collapse; font-size: .88rem; font-variant-numeric: tabular-nums; }
+  :global(.table th) { text-align: left; font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; color: var(--fg-3); padding: 10px 14px; white-space: nowrap; }
+  :global(.table td) { padding: 9px 14px; border-top: 1px solid var(--ink-100); }
+  :global(.table td.num), :global(.table th.num) { text-align: right; }
+  :global(.table td.path) { font-family: ui-monospace, monospace; font-size: .78rem; color: var(--fg-2); word-break: break-all; }
+</style>
+
+<script>
+  import type { SupabaseClient } from '@supabase/supabase-js';
+  import { el, initAdmin, showError, toast } from '../../lib/admin';
+
+  type Bucket = { bucket_id: string; files: number; bytes: number; db_bytes: number };
+  type Orphan = { bucket_id: string; name: string; bytes: number; created_at: string };
+
+  let sb: SupabaseClient;
+  let orphans: Orphan[] = [];
+  const q = <T extends Element>(s: string) => document.querySelector<T>(s)!;
+  const nf = (n: number) => n.toLocaleString('de-CH');
+  const size = (b: number) => (b >= 1073741824 ? `${(b / 1073741824).toFixed(2)} GB` : b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`);
+  const tile = (value: string, label: string) => el('div', { class: 'r-tile' }, el('strong', { textContent: value }), el('span', { textContent: label }));
+  const row = (cells: (string | [string, string])[], tag: 'td' | 'th' = 'td') =>
+    el('tr', {}, ...cells.map((c) => (Array.isArray(c) ? el(tag, { class: c[1], textContent: c[0] }) : el(tag, { textContent: c }))));
+
+  async function load() {
+    const [u, o] = await Promise.all([sb.rpc('admin_storage_usage'), sb.rpc('admin_storage_orphans')]);
+    if (u.error || o.error) return showError((u.error || o.error)!.message);
+    const buckets = (u.data ?? []) as Bucket[];
+    orphans = (o.data ?? []) as Orphan[];
+    const files = buckets.reduce((n, b) => n + Number(b.bytes), 0);
+    const db = Number(buckets[0]?.db_bytes ?? 0);
+    const orphanBytes = orphans.reduce((n, x) => n + Number(x.bytes), 0);
+    q<HTMLElement>('[data-tiles]').replaceChildren(
+      tile(size(files), `Files · ${nf(buckets.reduce((n, b) => n + Number(b.files), 0))}`),
+      tile(size(db), 'Database'),
+      tile(nf(orphans.length), 'Unused files'),
+      tile(size(orphanBytes), 'Unused, to free'),
+    );
+    q<HTMLElement>('[data-buckets]').replaceChildren(
+      el('thead', {}, row(['Bucket', ['Files', 'num'], ['Size', 'num']], 'th')),
+      el('tbody', {}, ...buckets.map((b) => row([b.bucket_id, [nf(Number(b.files)), 'num'], [size(Number(b.bytes)), 'num']]))),
+    );
+    q<HTMLElement>('[data-orphans]').replaceChildren(
+      el('thead', {}, row(['Bucket', 'File', ['Size', 'num'], 'Uploaded'], 'th')),
+      el('tbody', {}, ...(orphans.length
+        ? orphans.slice(0, 200).map((x) => row([x.bucket_id, [x.name, 'path'], [size(Number(x.bytes)), 'num'], new Date(x.created_at).toLocaleDateString('de-CH')]))
+        : [row(['Nothing to clean up.'])])),
+    );
+    const btn = q<HTMLButtonElement>('[data-delete]');
+    btn.hidden = !orphans.length;
+    btn.textContent = `Delete ${nf(orphans.length)} unused files (${size(orphanBytes)})`;
+  }
+
+  q<HTMLButtonElement>('[data-delete]').addEventListener('click', async () => {
+    if (!orphans.length || !confirm(`Delete ${orphans.length} unused files? This can't be undone.`)) return;
+    const btn = q<HTMLButtonElement>('[data-delete]');
+    btn.disabled = true;
+    let done = 0, failed = 0;
+    const byBucket = new Map<string, string[]>();
+    for (const x of orphans) (byBucket.get(x.bucket_id) ?? byBucket.set(x.bucket_id, []).get(x.bucket_id)!).push(x.name);
+    for (const [bucket, names] of byBucket) {
+      for (let i = 0; i < names.length; i += 100) {
+        const { data, error } = await sb.storage.from(bucket).remove(names.slice(i, i + 100));
+        if (error) failed += Math.min(100, names.length - i); else done += data?.length ?? 0;
+      }
+    }
+    btn.disabled = false;
+    toast(failed ? `Deleted ${done}, ${failed} failed` : `Deleted ${done} unused files`);
+    await load();
+  });
+
+  initAdmin((client) => { sb = client; return load(); });
+</script>
