@@ -17,12 +17,9 @@ import AdminShell from '../../layouts/AdminShell.astro';
         <button type="button" data-kind-filter="tunnel" aria-selected="false">Tunnels</button>
       </div>
       <div class="new-btns">
-        <button type="button" class="ghost-btn" data-loc-check-btn>Check DZ locations</button>
         <button type="button" class="primary-btn small" data-new>+ Add new</button>
       </div>
     </div>
-    <!-- One-off data cleanup: dropzones further than 2 km from any airfield. -->
-    <section class="loc-check" data-loc-check hidden></section>
     <p class="list-count" data-list-count></p>
     <div class="place-list" data-places></div>
   </div>
@@ -62,16 +59,6 @@ import AdminShell from '../../layouts/AdminShell.astro';
   }
   .kind-pills button[aria-selected="true"] { background: var(--fg); color: #fff; }
   .new-btns { display: flex; gap: 8px; margin-left: auto; }
-  .loc-check { margin-top: 16px; padding: 16px 18px; border-radius: 16px; background: var(--surface); box-shadow: 0 1px 3px rgba(41, 43, 44, .08); }
-  .loc-check-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-  .loc-check-head p { margin: 0; flex: 1 1 260px; color: var(--fg-2); }
-  .loc-check table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: .9rem; }
-  .loc-check th { text-align: left; color: var(--fg-3); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--ink-100); }
-  .loc-check td { padding: 8px; border-bottom: 1px solid var(--ink-100); vertical-align: top; }
-  .loc-check td small { display: block; color: var(--fg-3); }
-  .loc-check .link-btn { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--fg); cursor: pointer; text-align: left; }
-  .loc-check .link-btn:hover, .loc-check a:hover { text-decoration: underline; }
-  .loc-check-scroll { overflow-x: auto; }
   :global(.small) { padding: 10px 16px !important; font-size: .9rem !important; }
   :global(.dark-btn) {
     border: 0; cursor: pointer; border-radius: 999px; padding: 13px 22px; font: 800 1rem var(--font);
@@ -586,164 +573,6 @@ import AdminShell from '../../layouts/AdminShell.astro';
   }));
   $<HTMLButtonElement>('[data-new]').addEventListener('click', () => openEditor('dz', null));
 
-  // ---------- Location check (one-off cleanup) ----------
-  // Every dropzone should sit on an airfield. Loads the open OurAirports
-  // dataset (public domain, ~12 MB, every airport down to small strips) and
-  // lists dropzones whose pin is more than 2 km from any airfield, or more
-  // than 2 km from the airfield their ICAO code names. Tunnels aren't at
-  // airfields, so they're not checked.
-  const AIRPORTS_CSV = 'https://davidmegginson.github.io/ourairports-data/airports.csv';
-  const MAX_KM = 2;
-  // Checked by hand: the pin is right, the airfield just isn't in OurAirports
-  // (or is further than 2 km). Plus what was ticked off in this browser.
-  const LOCATION_CHECKED = new Set([
-    'FunnyFarm', 'Skydive Terengganu', 'SA Skydiving', 'Skydive West Edmonton', 'Skydive Pharaohs',
-    'Faldskærmsklubben DFC', 'FSC Calw e.v', 'Skydive Vancouver', 'Skydive Ramblers', 'Davy Parachutisme',
-    'Bloemfontein Parachute Club', 'Salzburger Fallschirmspringer- und Flugsport Club',
-  ]);
-  const CHECKED_KEY = 'arcAdminLocationChecked';
-  const checkedHere = (): Set<string> => {
-    try { return new Set(JSON.parse(localStorage.getItem(CHECKED_KEY) ?? '[]')); } catch { return new Set(); }
-  };
-  function markChecked(name: string) {
-    const set = checkedHere(); set.add(name);
-    try { localStorage.setItem(CHECKED_KEY, JSON.stringify([...set])); } catch { /* private mode */ }
-    runLocationCheck();
-  }
-  let airfieldsCache: Awaited<ReturnType<typeof loadAirfields>> | null = null;
-  type Airfield = { name: string; code: string; lat: number; lng: number };
-
-  function parseCsv(text: string): string[][] {
-    const rows: string[][] = [];
-    let row: string[] = [], cell = '', quoted = false;
-    for (let i = 0; i < text.length; i++) {
-      const c = text[i];
-      if (quoted) {
-        if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else quoted = false; }
-        else cell += c;
-      } else if (c === '"') quoted = true;
-      else if (c === ',') { row.push(cell); cell = ''; }
-      else if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
-      else if (c !== '\r') cell += c;
-    }
-    if (cell || row.length) { row.push(cell); rows.push(row); }
-    return rows;
-  }
-
-  function distKm(aLat: number, aLng: number, bLat: number, bLng: number) {
-    const r = Math.PI / 180, dLat = (bLat - aLat) * r, dLng = (bLng - aLng) * r;
-    const h = Math.sin(dLat / 2) ** 2 + Math.cos(aLat * r) * Math.cos(bLat * r) * Math.sin(dLng / 2) ** 2;
-    return 12742 * Math.asin(Math.sqrt(h));
-  }
-
-  async function loadAirfields() {
-    const res = await fetch(AIRPORTS_CSV);
-    if (!res.ok) throw new Error(`Airfield list didn't load (${res.status}).`);
-    const [head, ...rows] = parseCsv(await res.text());
-    const col = (n: string) => head.indexOf(n);
-    const iType = col('type'), iName = col('name'), iLat = col('latitude_deg'), iLng = col('longitude_deg');
-    const codeCols = ['icao_code', 'gps_code', 'ident', 'local_code'].map(col);
-    // Grid of 1° cells for the nearest-airfield search; codes for the ICAO check.
-    const grid = new Map<string, Airfield[]>();
-    const byCode = new Map<string, Airfield>();
-    for (const r of rows) {
-      if (!['small_airport', 'medium_airport', 'large_airport'].includes(r[iType])) continue;
-      const a: Airfield = { name: r[iName], code: r[codeCols[0]] || r[codeCols[1]] || r[codeCols[2]], lat: +r[iLat], lng: +r[iLng] };
-      if (!Number.isFinite(a.lat) || !Number.isFinite(a.lng)) continue;
-      const key = `${Math.floor(a.lat)},${Math.floor(a.lng)}`;
-      (grid.get(key) ?? grid.set(key, []).get(key)!).push(a);
-      for (const i of codeCols) { const c = r[i]?.toUpperCase(); if (c && !byCode.has(c)) byCode.set(c, a); }
-    }
-    return { grid, byCode };
-  }
-
-  type LocIssue = { place: Place & { kind: Kind }; km: number | null; near: Airfield | null; note: string };
-
-  const mapsLink = (lat: number, lng: number, text: string) =>
-    el('a', { href: `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, target: '_blank', rel: 'noopener', textContent: text });
-
-  async function runLocationCheck() {
-    const box = $<HTMLElement>('[data-loc-check]');
-    const btn = $<HTMLButtonElement>('[data-loc-check-btn]');
-    box.hidden = false;
-    btn.disabled = true;
-    if (!airfieldsCache) box.replaceChildren(el('p', { textContent: 'Loading the airfield list (~12 MB)…' }));
-    try {
-      airfieldsCache ??= await loadAirfields();
-      const { grid, byCode } = airfieldsCache;
-      const here = checkedHere();
-      const isChecked = (name: string) => LOCATION_CHECKED.has(name) || here.has(name);
-      const hiddenChecked = places.filter((p) => p.kind === 'dz' && isChecked(p.name)).length;
-      const dzs = places.filter((p) => p.kind === 'dz' && !isChecked(p.name));
-      const issues: LocIssue[] = [];
-      for (const p of dzs) {
-        const lat = Number(p.lat), lng = Number(p.lng);
-        if (p.lat == null || p.lng == null || !Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) {
-          issues.push({ place: p, km: null, near: null, note: 'No coordinates' });
-          continue;
-        }
-        let near: Airfield | null = null, km = Infinity;
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-          for (const a of grid.get(`${Math.floor(lat) + dy},${Math.floor(lng) + dx}`) ?? []) {
-            const d = distKm(lat, lng, a.lat, a.lng);
-            if (d < km) { km = d; near = a; }
-          }
-        }
-        const notes: string[] = [];
-        if (km > MAX_KM) notes.push(near ? 'No airfield within 2 km' : 'No airfield within ~100 km');
-        const icao = String(p.icao ?? '').trim().toUpperCase();
-        const named = icao ? byCode.get(icao) : undefined;
-        if (icao && !named) notes.push(`ICAO ${icao} not found`);
-        if (named) {
-          const dNamed = distKm(lat, lng, named.lat, named.lng);
-          if (dNamed > MAX_KM) {
-            notes.push(`${icao} (${named.name}) is ${dNamed.toFixed(1)} km away`);
-            if (km <= MAX_KM) { km = dNamed; near = named; }
-          }
-        }
-        if (notes.length) issues.push({ place: p, km: Number.isFinite(km) ? km : null, near, note: notes.join(' · ') });
-      }
-      issues.sort((a, b) => (b.km ?? Infinity) - (a.km ?? Infinity));
-      const tunnels = places.length - dzs.length;
-
-      const csv = () => [['Name', 'Country', 'Lat', 'Lng', 'ICAO', 'Distance km', 'Nearest airfield', 'Airfield lat', 'Airfield lng', 'Note'],
-        ...issues.map((i) => [i.place.name, i.place.country ?? '', i.place.lat ?? '', i.place.lng ?? '', i.place.icao ?? '',
-          i.km == null ? '' : i.km.toFixed(1), i.near?.name ?? '', i.near?.lat ?? '', i.near?.lng ?? '', i.note])]
-        .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-
-      box.replaceChildren(
-        el('div', { class: 'loc-check-head' },
-          el('p', { textContent: `${issues.length} of ${dzs.length} dropzones to check by hand${hiddenChecked ? ` · ${hiddenChecked} already checked, hidden` : ''}${tunnels ? ` · ${tunnels} tunnels not checked (they're not at airfields)` : ''}. Sorted by distance; private strips missing from OurAirports show up here too.` }),
-          el('button', { type: 'button', class: 'ghost-btn', textContent: 'Copy as CSV', onclick: async () => {
-            await navigator.clipboard.writeText(csv());
-            toast('Copied — paste it into a spreadsheet');
-          } }),
-          el('button', { type: 'button', class: 'ghost-btn', textContent: 'Close', onclick: () => { box.hidden = true; } }),
-        ),
-        el('div', { class: 'loc-check-scroll' },
-          el('table', {},
-            el('thead', {}, el('tr', {}, ...['Dropzone', 'Distance', 'Nearest airfield', 'Why', ''].map((t) => el('th', { textContent: t })))),
-            el('tbody', {}, ...issues.map((i) => el('tr', {},
-              el('td', {},
-                el('button', { type: 'button', class: 'link-btn', textContent: i.place.name, onclick: () => openEditor('dz', i.place) }),
-                el('small', {}, [i.place.country, i.place.icao].filter(Boolean).join(' · ') || ' '),
-                i.place.lat != null && i.place.lng != null && el('small', {}, mapsLink(Number(i.place.lat), Number(i.place.lng), 'Pin on Google Maps')),
-              ),
-              el('td', { textContent: i.km == null ? '—' : `${i.km.toFixed(1)} km` }),
-              el('td', {}, i.near ? mapsLink(i.near.lat, i.near.lng, `${i.near.name}${i.near.code ? ` (${i.near.code})` : ''}`) : '—'),
-              el('td', { textContent: i.note }),
-              el('td', {}, el('button', { type: 'button', class: 'ghost-btn', textContent: 'Location checked', title: 'The pin is right — hide it from this list (this browser)', onclick: () => markChecked(i.place.name) })),
-            ))),
-          ),
-        ),
-      );
-    } catch (e: any) {
-      box.replaceChildren(el('p', { textContent: e?.message ?? 'The check failed — try again.' }));
-    } finally {
-      btn.disabled = false;
-    }
-  }
-  $<HTMLButtonElement>('[data-loc-check-btn]').addEventListener('click', runLocationCheck);
 
   // ---------- Editor ----------
   async function openEditor(kind: Kind, place: Place | null) {
