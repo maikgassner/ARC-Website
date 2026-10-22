@@ -479,7 +479,30 @@ import AdminShell from '../../layouts/AdminShell.astro';
       const m = text.match(p);
       if (m) { const lat = +m[1], lng = +m[2]; if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return [lat, lng]; }
     }
-    return null;
+    return plusCodeToCoords(text);
+  }
+
+  // Google often puts only a Plus Code in a place link (…!20s8Q995PVV%2BFCM,
+  // no @lat,lng), or people paste one ("8Q995PVV+FCM"): decode the full
+  // Open Location Code to the centre of its cell (~14 × 14 m, 11 chars ~3 m).
+  const OLC = '23456789CFGHJMPQRVWX';
+  function plusCodeToCoords(text: string): [number, number] | null {
+    let t = text;
+    try { t = decodeURIComponent(text); } catch { /* keep as is */ }
+    const m = t.match(/(?:^|[^23456789CFGHJMPQRVWX])([23456789CFGHJMPQRVWX]{8})\+([23456789CFGHJMPQRVWX]{2,3})(?![23456789CFGHJMPQRVWX])/i);
+    if (!m) return null;
+    const code = (m[1] + m[2]).toUpperCase();
+    let lat = -90, lng = -180, res = 20;
+    for (let i = 0; i < 10; i += 2) {
+      lat += OLC.indexOf(code[i]) * res; lng += OLC.indexOf(code[i + 1]) * res;
+      if (i < 8) res /= 20;
+    }
+    let latCell = res, lngCell = res;
+    if (code.length > 10) { // 11th char: the cell split into 5 rows × 4 columns
+      const d = OLC.indexOf(code[10]); latCell = res / 5; lngCell = res / 4;
+      lat += Math.floor(d / 4) * latCell; lng += (d % 4) * lngCell;
+    }
+    return [+(lat + latCell / 2).toFixed(6), +(lng + lngCell / 2).toFixed(6)];
   }
 
   // Downscale big desk photos before upload (the app uploads ~0.7 quality JPEGs).
