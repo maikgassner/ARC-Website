@@ -155,14 +155,19 @@ const year = new Date().getFullYear();
     </div>
 
     <!-- 04 Map -->
-    <div class="feature">
+    <div class="feature" data-tabs>
       <div class="feature-text end">
         <div class="kicker">04 — Map</div>
         <h3>Dropzones and tunnels worldwide.</h3>
         <p class="lede">Discover dropzones and wind tunnels on the map, filter by type and save your favourites for the next trip.</p>
+        <p class="lede">Every dropzone at a glance: exit altitude, fleet, guest ticket price and today's jumping hours.</p>
+        <div class="tabs" role="tablist">
+          <button role="tab" aria-selected="true" data-src="/img/landing/map.jpg">Map</button>
+          <button role="tab" aria-selected="false" data-src="/img/landing/dz-detail.jpg">Dropzone page</button>
+        </div>
       </div>
       <div class="stage left-glow">
-        <div class="phone"><img src="/img/landing/map.jpg" alt="Map" width="640" height="1385" loading="lazy"></div>
+        <div class="phone"><img data-tab-target src="/img/landing/map.jpg" alt="Map" width="640" height="1385" loading="lazy"></div>
       </div>
     </div>
 
@@ -177,7 +182,8 @@ const year = new Date().getFullYear();
         <p class="lede">Every dropzone has its own page: 5-day forecast, winds aloft and temperatures by altitude, a cloud profile showing cloud base against your exit altitude and, for Alpine dropzones, the Föhn trend. Plus the facilities on site.</p>
         <div class="tabs" role="tablist">
           <button role="tab" aria-selected="true" data-src="/img/landing/dz-weather.jpg">Weather &amp; winds aloft</button>
-          <button role="tab" aria-selected="false" data-src="/img/landing/dz-clouds.jpg">Clouds &amp; Föhn</button>
+          <button role="tab" aria-selected="false" data-src="/img/landing/dz-clouds.jpg">Clouds</button>
+          <button role="tab" aria-selected="false" data-src="/img/landing/dz-foehn.jpg">Föhn</button>
         </div>
       </div>
     </div>
@@ -196,6 +202,23 @@ const year = new Date().getFullYear();
       </div>
       <div class="stage left-glow">
         <div class="phone"><img data-tab-target src="/img/landing/feed.jpg" alt="Community" width="640" height="1385" loading="lazy"></div>
+      </div>
+    </div>
+
+    <!-- 07 Documents -->
+    <div class="feature" data-tabs>
+      <div class="stage">
+        <div class="phone"><img data-tab-target src="/img/landing/documents.jpg" alt="Documents" width="640" height="1385" loading="lazy"></div>
+      </div>
+      <div class="feature-text">
+        <div class="kicker">07 — Documents</div>
+        <h3>Your papers, always at hand.</h3>
+        <p class="lede">Licence and ratings, your rigs, liability and medical insurance in one place. Take a photo and Arc reads the details for you.</p>
+        <p class="lede">Arc shows you when a reserve repack or AAD service is coming up, so you're never grounded at the manifest.</p>
+        <div class="tabs" role="tablist">
+          <button role="tab" aria-selected="true" data-src="/img/landing/documents.jpg">Documents</button>
+          <button role="tab" aria-selected="false" data-src="/img/landing/license.jpg">Licence</button>
+        </div>
       </div>
     </div>
 
