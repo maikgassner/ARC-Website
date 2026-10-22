@@ -96,7 +96,8 @@ h1, h2, h3, p { margin: 0; }
 .phone { border-radius: 15.7% / 7.5%; background: var(--phone); }
 /* % margins resolve against the phone's width (% padding on .phone would
    resolve against its parent), so the bezel is always 2.9% of the phone. */
-.phone img { width: 94.2%; margin: 2.9%; border-radius: 13.6% / 6.3%; }
+.phone img, .phone video { display: block; width: 94.2%; height: auto; margin: 2.9%; border-radius: 13.6% / 6.3%; }
+.preview { padding-top: clamp(72px, 9vw, 128px); }
 
 /* ---------- Pill tabs (separate chips, active one filled dark) ---------- */
 .tabs {
