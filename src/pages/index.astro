@@ -104,7 +104,7 @@ const year = new Date().getFullYear();
     </div>
     <div class="stage left-glow">
       <div class="phone">
-        <video data-preview muted loop playsinline preload="none" poster="/img/landing/app-preview-poster.jpg" width="372" height="804" aria-label="Arc app preview: home feed, map, dropzone page and weather, logging a jump, logbook and profile">
+        <video data-preview muted loop playsinline preload="metadata" poster="/img/landing/app-preview-poster.jpg" style="background: #fafafa url(/img/landing/app-preview-poster.jpg) center / cover" width="372" height="804" aria-label="Arc app preview: home feed, map, dropzone page and weather, logging a jump, logbook and profile">
           <source src="/img/landing/app-preview.mp4" type="video/mp4">
         </video>
       </div>
@@ -311,8 +311,16 @@ const year = new Date().getFullYear();
 
 // App preview video: plays only while on screen; with reduced motion it
 // stays on its poster frame.
+// It starts loading a screen before it's reached, so playback doesn't open on
+// a black frame while the file is still coming in; the poster also sits
+// behind it as background.
 const preview = document.querySelector<HTMLVideoElement>('[data-preview]');
 if (preview && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  const early = new IntersectionObserver(([e]) => {
+    if (!e.isIntersecting) return;
+    preview.preload = 'auto'; preview.load(); early.disconnect();
+  }, { rootMargin: '800px 0px' });
+  early.observe(preview);
   new IntersectionObserver(([e]) => { if (e.isIntersecting) preview.play().catch(() => {}); else preview.pause(); }, { threshold: 0.35 }).observe(preview);
 }
 
