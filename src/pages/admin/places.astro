@@ -571,6 +571,23 @@ import AdminShell from '../../layouts/AdminShell.astro';
   // airfields, so they're not checked.
   const AIRPORTS_CSV = 'https://davidmegginson.github.io/ourairports-data/airports.csv';
   const MAX_KM = 2;
+  // Checked by hand: the pin is right, the airfield just isn't in OurAirports
+  // (or is further than 2 km). Plus what was ticked off in this browser.
+  const LOCATION_CHECKED = new Set([
+    'FunnyFarm', 'Skydive Terengganu', 'SA Skydiving', 'Skydive West Edmonton', 'Skydive Pharaohs',
+    'Faldskærmsklubben DFC', 'FSC Calw e.v', 'Skydive Vancouver', 'Skydive Ramblers', 'Davy Parachutisme',
+    'Bloemfontein Parachute Club', 'Salzburger Fallschirmspringer- und Flugsport Club',
+  ]);
+  const CHECKED_KEY = 'arcAdminLocationChecked';
+  const checkedHere = (): Set<string> => {
+    try { return new Set(JSON.parse(localStorage.getItem(CHECKED_KEY) ?? '[]')); } catch { return new Set(); }
+  };
+  function markChecked(name: string) {
+    const set = checkedHere(); set.add(name);
+    try { localStorage.setItem(CHECKED_KEY, JSON.stringify([...set])); } catch { /* private mode */ }
+    runLocationCheck();
+  }
+  let airfieldsCache: Awaited<ReturnType<typeof loadAirfields>> | null = null;
   type Airfield = { name: string; code: string; lat: number; lng: number };
 
   function parseCsv(text: string): string[][] {
@@ -627,10 +644,14 @@ import AdminShell from '../../layouts/AdminShell.astro';
     const btn = $<HTMLButtonElement>('[data-loc-check-btn]');
     box.hidden = false;
     btn.disabled = true;
-    box.replaceChildren(el('p', { textContent: 'Loading the airfield list (~12 MB)…' }));
+    if (!airfieldsCache) box.replaceChildren(el('p', { textContent: 'Loading the airfield list (~12 MB)…' }));
     try {
-      const { grid, byCode } = await loadAirfields();
-      const dzs = places.filter((p) => p.kind === 'dz');
+      airfieldsCache ??= await loadAirfields();
+      const { grid, byCode } = airfieldsCache;
+      const here = checkedHere();
+      const isChecked = (name: string) => LOCATION_CHECKED.has(name) || here.has(name);
+      const hiddenChecked = places.filter((p) => p.kind === 'dz' && isChecked(p.name)).length;
+      const dzs = places.filter((p) => p.kind === 'dz' && !isChecked(p.name));
       const issues: LocIssue[] = [];
       for (const p of dzs) {
         const lat = Number(p.lat), lng = Number(p.lng);
@@ -669,7 +690,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
       box.replaceChildren(
         el('div', { class: 'loc-check-head' },
-          el('p', { textContent: `${issues.length} of ${dzs.length} dropzones to check by hand${tunnels ? ` · ${tunnels} tunnels not checked (they're not at airfields)` : ''}. Sorted by distance; private strips missing from OurAirports show up here too.` }),
+          el('p', { textContent: `${issues.length} of ${dzs.length} dropzones to check by hand${hiddenChecked ? ` · ${hiddenChecked} already checked, hidden` : ''}${tunnels ? ` · ${tunnels} tunnels not checked (they're not at airfields)` : ''}. Sorted by distance; private strips missing from OurAirports show up here too.` }),
           el('button', { type: 'button', class: 'ghost-btn', textContent: 'Copy as CSV', onclick: async () => {
             await navigator.clipboard.writeText(csv());
             toast('Copied — paste it into a spreadsheet');
@@ -678,7 +699,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
         ),
         el('div', { class: 'loc-check-scroll' },
           el('table', {},
-            el('thead', {}, el('tr', {}, ...['Dropzone', 'Distance', 'Nearest airfield', 'Why'].map((t) => el('th', { textContent: t })))),
+            el('thead', {}, el('tr', {}, ...['Dropzone', 'Distance', 'Nearest airfield', 'Why', ''].map((t) => el('th', { textContent: t })))),
             el('tbody', {}, ...issues.map((i) => el('tr', {},
               el('td', {},
                 el('button', { type: 'button', class: 'link-btn', textContent: i.place.name, onclick: () => openEditor('dz', i.place) }),
@@ -688,6 +709,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
               el('td', { textContent: i.km == null ? '—' : `${i.km.toFixed(1)} km` }),
               el('td', {}, i.near ? mapsLink(i.near.lat, i.near.lng, `${i.near.name}${i.near.code ? ` (${i.near.code})` : ''}`) : '—'),
               el('td', { textContent: i.note }),
+              el('td', {}, el('button', { type: 'button', class: 'ghost-btn', textContent: 'Location checked', title: 'The pin is right — hide it from this list (this browser)', onclick: () => markChecked(i.place.name) })),
             ))),
           ),
         ),
