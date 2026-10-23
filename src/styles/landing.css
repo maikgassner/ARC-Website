@@ -132,13 +132,6 @@ h1, h2, h3, p { margin: 0; }
 .btn-coral:hover { background: var(--coral-press); }
 .btn-coral:active { transform: scale(.97); }
 
-.link-underline {
-  display: inline-block;
-  color: #fff;
-  font-weight: 700;
-  border-bottom: 1.5px solid rgba(255, 255, 255, .5);
-}
-.link-underline:hover { color: #fff; border-bottom-color: #fff; }
 
 /* ============================================================
    HERO
@@ -260,7 +253,6 @@ h1, h2, h3, p { margin: 0; }
   font-size: 16px;
   font-weight: 600;
 }
-.waitlist .link-underline { margin-top: 22px; font-size: 15px; padding-bottom: 3px; }
 
 .hero-phones {
   display: flex;
@@ -391,7 +383,6 @@ h1, h2, h3, p { margin: 0; }
 .contact .overline { color: rgba(255, 255, 255, .8); }
 .contact h2 { font-weight: 800; font-size: clamp(40px, 5.4vw, 72px); line-height: 1; letter-spacing: -.04em; margin-top: 18px; }
 .contact-lede { font-size: 18px; line-height: 1.6; color: rgba(255, 255, 255, .9); margin-top: 22px; max-width: 400px; text-wrap: pretty; }
-.contact .link-underline { margin-top: 32px; font-size: 20px; padding-bottom: 4px; }
 
 .contact-form {
   display: flex;
