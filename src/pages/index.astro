@@ -124,9 +124,9 @@ const year = new Date().getFullYear();
   <div class="features">
 
     <!-- 01 Logbook -->
-    <div class="feature">
+    <div class="feature" data-tabs>
       <div class="stage">
-        <div class="phone"><img src="/img/landing/logbook.jpg" alt="Skydive logbook" width="640" height="1385" loading="lazy"></div>
+        <div class="phone"><img data-tab-target src="/img/landing/logbook.jpg" alt="Skydive logbook" width="640" height="1385" loading="lazy"></div>
       </div>
       <div class="feature-text">
         <div class="kicker">01 — Logbook</div>
@@ -134,6 +134,11 @@ const year = new Date().getFullYear();
         <p class="lede">Jump number, discipline and dropzone, sorted by month. Search, filter and find any jump in seconds.</p>
         <p class="lede">Got 1,000 jumps to catch up on? No problem. The AI import scans your old logbooks, even handwritten ones. No need to do it all at once: scan a few pages whenever you have time.</p>
         <p class="lede">Need a signature? With Sign a jump, licensed skydivers from the Arc community sign your jumps right in the app, in a couple of taps.</p>
+        <p class="lede">Coming from another app or a spreadsheet? Import an Excel or CSV file, and export everything as a backup whenever you like.</p>
+        <div class="tabs" role="tablist">
+          <button role="tab" aria-selected="true" data-src="/img/landing/logbook.jpg">Logbook</button>
+          <button role="tab" aria-selected="false" data-src="/img/landing/import-export.jpg">Import &amp; export</button>
+        </div>
       </div>
     </div>
 
@@ -259,20 +264,15 @@ const year = new Date().getFullYear();
     </div>
 
 
-    <!-- 09 Import & export -->
-    <div class="feature" data-tabs>
+    <!-- 09 Jumper profile -->
+    <div class="feature">
       <div class="stage">
-        <div class="phone"><img data-tab-target src="/img/landing/jumper-profile.jpg" alt="Jumper profile PDF" width="640" height="1385" loading="lazy"></div>
+        <div class="phone"><img src="/img/landing/jumper-profile.jpg" alt="Jumper profile PDF" width="640" height="1385" loading="lazy"></div>
       </div>
       <div class="feature-text">
-        <div class="kicker">09 — Import &amp; export</div>
+        <div class="kicker">09 — Jumper profile</div>
         <h3>Ready for any manifest.</h3>
-        <p class="lede">Your jumper profile as a one-page A4 PDF: licence, insurance, emergency contact, rig and what's due, signed with your finger. Send it ahead or print it for the boogie.</p>
-        <p class="lede">Bring your history in from paper or Excel, and take it with you any time: every jump and tunnel session exports to Excel, Numbers or Google Sheets.</p>
-        <div class="tabs" role="tablist">
-          <button role="tab" aria-selected="true" data-src="/img/landing/jumper-profile.jpg">Jumper profile</button>
-          <button role="tab" aria-selected="false" data-src="/img/landing/import-export.jpg">Import &amp; export</button>
-        </div>
+        <p class="lede">Your jumper profile as a one-page A4 PDF: licence, insurance, emergency contact, rig and what's due, signed with your finger. Send it ahead before you jump at a new dropzone.</p>
       </div>
     </div>
   </div>
