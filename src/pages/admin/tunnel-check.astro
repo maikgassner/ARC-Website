@@ -1,0 +1,191 @@
+---
+// One-off data pass over the wind tunnels: each PROD tunnel with what the
+// automatic checks found (pin vs. town via OpenStreetMap, duplicates, vague
+// names) and researched specs with their sources (src/data/tunnel-check.json,
+// built from the TEST data, matched by name). Edit in place and save — same
+// RPCs as /admin/places (admin_save_location only writes the fields sent,
+// admin_rename_location moves photos/reviews along). "Done" lives in this
+// browser only.
+import AdminShell from '../../layouts/AdminShell.astro';
+---
+<AdminShell title="Tunnel check" sub="Go through every wind tunnel: check the pin, fix the data, tick it off." active="tunnels">
+  <div class="tiles" data-tiles></div>
+  <div class="toolbar">
+    <div class="pills" role="tablist" data-filters>
+      <button type="button" data-f="flagged" aria-selected="true">Flagged</button>
+      <button type="button" data-f="open" aria-selected="false">Not done</button>
+      <button type="button" data-f="done" aria-selected="false">Done</button>
+      <button type="button" data-f="all" aria-selected="false">All</button>
+    </div>
+    <input type="search" placeholder="Search name or place…" data-search aria-label="Search">
+  </div>
+  <p class="note">Findings come from a check of the TEST data (26–27 Oct 2026) and are matched to PROD by name. Where the PROD pin differs from the checked one, the map check no longer applies.</p>
+  <div class="list" data-list></div>
+</AdminShell>
+
+<style>
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 16px; }
+  :global(.r-tile) { display: grid; gap: 2px; padding: 16px 18px; border-radius: 18px; background: var(--surface); box-shadow: var(--shadow); }
+  :global(.r-tile strong) { font-size: 1.8rem; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  :global(.r-tile span) { font-size: .85rem; font-weight: 700; color: var(--fg-3); }
+  @media (max-width: 760px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+  .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 20px; position: sticky; top: 0; z-index: 2; background: var(--bg, #fff); padding: 10px 0; }
+  .toolbar input[type="search"] { flex: 1 1 240px; width: auto; }
+  .pills { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pills button { border: 0; cursor: pointer; font: 600 .9rem var(--font); padding: 9px 16px; border-radius: 999px; background: var(--ink-100); color: var(--fg-2); }
+  .pills button[aria-selected="true"] { background: var(--fg); color: #fff; }
+  .note { color: var(--fg-3); font-size: .85rem; margin: 8px 0 14px; }
+  .list { display: grid; gap: 14px; }
+  :global(.tc-card) { background: var(--surface); box-shadow: var(--shadow); border-radius: 18px; padding: 18px; display: grid; gap: 12px; }
+  :global(.tc-card.done) { opacity: .55; }
+  :global(.tc-head) { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+  :global(.tc-head h3) { margin: 0; font-size: 1.1rem; }
+  :global(.tc-head .loc) { color: var(--fg-3); font-size: .9rem; }
+  :global(.tc-flags) { display: flex; gap: 6px; flex-wrap: wrap; }
+  :global(.tc-flag) { font-size: .78rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: var(--coral-50); color: var(--accent-text); }
+  :global(.tc-flag.warn) { background: #fdf3e1; color: #8a5a10; }
+  :global(.tc-flag.ok) { background: #e6f3ec; color: #2f7d5b; }
+  :global(.tc-fields) { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 14px; }
+  :global(.tc-field label) { display: block; font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--fg-3); margin-bottom: 4px; }
+  :global(.tc-field input) { width: 100%; }
+  :global(.tc-sugg) { font-size: .8rem; color: #2f7d5b; margin-top: 4px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  :global(.tc-sugg button) { border: 0; cursor: pointer; font: 700 .75rem var(--font); padding: 3px 9px; border-radius: 999px; background: #e6f3ec; color: #2f7d5b; }
+  :global(.tc-links) { display: flex; gap: 6px 16px; flex-wrap: wrap; font-size: .85rem; }
+  :global(.tc-links a) { font-weight: 700; color: var(--accent-text); }
+  :global(.tc-meta) { font-size: .82rem; color: var(--fg-3); }
+  :global(.tc-actions) { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+</style>
+
+<script>
+  import type { SupabaseClient } from '@supabase/supabase-js';
+  import { el, initAdmin, showError, toast } from '../../lib/admin';
+  import findings from '../../data/tunnel-check.json';
+
+  type Flag = { level: 'bad' | 'warn' | 'ok'; text: string };
+  type Finding = { flags: Flag[]; osm: string; checkedLat: number; checkedLng: number; research: Record<string, any> };
+  type Tunnel = { name: string; location: string; lat: number; lng: number; diameter: string; height: string; max_speed: string; website: string };
+  const F = findings as Record<string, Finding>;
+  const EDIT: [keyof Tunnel, string, string][] = [
+    ['name', 'Name', 'text'], ['location', 'Location (town, country)', 'text'],
+    ['lat', 'Latitude', 'number'], ['lng', 'Longitude', 'number'],
+    ['diameter', 'Diameter', 'text'], ['height', 'Height', 'text'], ['max_speed', 'Max speed', 'text'], ['website', 'Website', 'text'],
+  ];
+  const RESEARCH_KEY: Partial<Record<keyof Tunnel, string>> = { diameter: 'diameter', height: 'height', max_speed: 'max_speed', website: 'website' };
+
+  let sb: SupabaseClient;
+  let tunnels: Tunnel[] = [];
+  let filter = 'flagged', query = '';
+  const q = <T extends Element>(s: string) => document.querySelector<T>(s)!;
+  const doneKey = (name: string) => `arc-tunnel-check-done:${name}`;
+  const isDone = (name: string) => { try { return localStorage.getItem(doneKey(name)) === '1'; } catch { return false; } };
+  const setDone = (name: string, on: boolean) => { try { on ? localStorage.setItem(doneKey(name), '1') : localStorage.removeItem(doneKey(name)); } catch {} };
+  // Metres between two pins (equirectangular, fine at this scale).
+  const metres = (a: number, b: number, c: number, d: number) => {
+    const x = (d - b) * Math.cos(((a + c) / 2) * Math.PI / 180), y = c - a;
+    return Math.sqrt(x * x + y * y) * 111_320;
+  };
+  const flagsOf = (t: Tunnel): Flag[] => {
+    const f = F[t.name];
+    if (!f) return [{ level: 'warn', text: 'Not in the check (new or renamed on PROD)' }];
+    const out = [...f.flags];
+    if (metres(t.lat, t.lng, f.checkedLat, f.checkedLng) > 50) out.unshift({ level: 'warn', text: 'PROD pin differs from the checked one' });
+    return out;
+  };
+  const flagged = (t: Tunnel) => flagsOf(t).some((x) => x.level !== 'ok');
+
+  function render() {
+    const s = query.trim().toLowerCase();
+    const rows = tunnels.filter((t) => {
+      if (s && !`${t.name} ${t.location}`.toLowerCase().includes(s)) return false;
+      if (filter === 'flagged') return flagged(t) && !isDone(t.name);
+      if (filter === 'open') return !isDone(t.name);
+      if (filter === 'done') return isDone(t.name);
+      return true;
+    });
+    const tile = (v: number, l: string) => el('div', { class: 'r-tile' }, el('strong', { textContent: String(v) }), el('span', { textContent: l }));
+    q<HTMLElement>('[data-tiles]').replaceChildren(
+      tile(tunnels.length, 'Tunnels on PROD'),
+      tile(tunnels.filter(flagged).length, 'Flagged'),
+      tile(tunnels.filter((t) => isDone(t.name)).length, 'Done'),
+      tile(tunnels.filter((t) => !isDone(t.name)).length, 'Left'),
+    );
+    q<HTMLElement>('[data-list]').replaceChildren(...(rows.length ? rows.map(card) : [el('p', { class: 'note', textContent: 'Nothing in this view.' })]));
+  }
+
+  function card(t: Tunnel) {
+    const f = F[t.name];
+    const r = f?.research ?? {};
+    const inputs: Partial<Record<keyof Tunnel, HTMLInputElement>> = {};
+    const saveBtn = el('button', { type: 'button', class: 'primary-btn small', textContent: 'Save', disabled: true });
+    const changed = () => EDIT.some(([k]) => String(inputs[k]!.value).trim() !== String(t[k] ?? ''));
+    const sync = () => { saveBtn.disabled = !changed(); };
+    const fields = el('div', { class: 'tc-fields' }, ...EDIT.map(([k, label, type]) => {
+      const input = el('input', { type, value: t[k] ?? '', step: type === 'number' ? 'any' : undefined, oninput: sync });
+      inputs[k] = input;
+      const rk = RESEARCH_KEY[k];
+      const sugg = rk && r[rk] && String(r[rk]) !== String(t[k] ?? '')
+        ? el('div', { class: 'tc-sugg' }, `Research: ${r[rk]}`, el('button', { type: 'button', textContent: 'Use', onclick: () => { input.value = String(r[rk]); sync(); } }))
+        : null;
+      return el('div', { class: 'tc-field' }, el('label', { textContent: label }), input, sugg);
+    }));
+    const done = isDone(t.name);
+    const doneBtn = el('button', { type: 'button', class: 'ghost-btn', textContent: done ? 'Undo' : 'Looks right ✓', onclick: () => { setDone(t.name, !isDone(t.name)); render(); } });
+    saveBtn.addEventListener('click', async () => {
+      saveBtn.disabled = true;
+      const v = Object.fromEntries(EDIT.map(([k]) => [k, String(inputs[k]!.value).trim()]));
+      let name = t.name;
+      if (v.name && v.name !== t.name) {
+        if (!confirm(`Rename “${t.name}” to “${v.name}”? Photos, reviews and favourites move along; logbook entries keep the old name.`)) { sync(); return; }
+        const ren = await sb.rpc('admin_rename_location', { p_kind: 'tunnel', p_old: t.name, p_new: v.name });
+        if (ren.error) { toast(ren.error.message.includes('duplicate key') ? `“${v.name}” already exists.` : `Rename failed: ${ren.error.message}`); sync(); return; }
+        name = ren.data as string;
+        // Keep the finding and the done mark with the new name.
+        if (F[t.name]) F[name] = F[t.name];
+        if (isDone(t.name)) { setDone(name, true); setDone(t.name, false); }
+      }
+      const payload: Record<string, any> = {
+        location: v.location, diameter: v.diameter, height: v.height, max_speed: v.max_speed, website: v.website,
+        lat: Number(v.lat), lng: Number(v.lng),
+      };
+      if (!Number.isFinite(payload.lat) || !Number.isFinite(payload.lng)) { toast('Latitude and longitude must be numbers.'); sync(); return; }
+      const { error } = await sb.rpc('admin_save_location', { p_kind: 'tunnel', p_original_name: name, p_data: payload });
+      if (error) { toast(`Save failed: ${error.message}`); sync(); return; }
+      Object.assign(t, { ...v, name, lat: payload.lat, lng: payload.lng });
+      toast(`Saved ${name}`);
+      render();
+    });
+    return el('article', { class: `tc-card${done ? ' done' : ''}` },
+      el('div', { class: 'tc-head' },
+        el('div', {}, el('h3', { textContent: t.name }), el('div', { class: 'loc', textContent: t.location })),
+        el('div', { class: 'tc-flags' }, ...flagsOf(t).map((x) => el('span', { class: `tc-flag ${x.level === 'bad' ? '' : x.level}`, textContent: x.text }))),
+      ),
+      f?.osm ? el('div', { class: 'tc-meta', textContent: `OpenStreetMap at the checked pin: ${f.osm}` }) : null,
+      el('div', { class: 'tc-links' },
+        el('a', { href: `https://www.google.com/maps/search/?api=1&query=${t.lat},${t.lng}`, target: '_blank', rel: 'noopener', textContent: 'Pin on Google Maps' }),
+        el('a', { href: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${t.name} ${t.location}`)}`, target: '_blank', rel: 'noopener', textContent: 'Search the name' }),
+        t.website ? el('a', { href: t.website.startsWith('http') ? t.website : `https://${t.website}`, target: '_blank', rel: 'noopener', textContent: 'Website' }) : null,
+        ...((r.sources ?? []) as string[]).slice(0, 3).map((u, i) => el('a', { href: u, target: '_blank', rel: 'noopener', textContent: `Source ${i + 1}` })),
+      ),
+      r.notes ? el('div', { class: 'tc-meta', textContent: `Research: ${r.notes}${r.city ? ` · Town: ${r.city}` : ''}${r.closed ? ' · looks CLOSED' : ''}` }) : null,
+      fields,
+      el('div', { class: 'tc-actions' }, doneBtn, saveBtn),
+    );
+  }
+
+  q<HTMLElement>('[data-filters]').addEventListener('click', (e) => {
+    const b = (e.target as HTMLElement).closest('button');
+    if (!b) return;
+    filter = b.dataset.f!;
+    q<HTMLElement>('[data-filters]').querySelectorAll('button').forEach((x) => x.setAttribute('aria-selected', String(x === b)));
+    render();
+  });
+  q<HTMLInputElement>('[data-search]').addEventListener('input', (e) => { query = (e.target as HTMLInputElement).value; render(); });
+
+  initAdmin(async (client) => {
+    sb = client;
+    const { data, error } = await sb.from('tunnels').select('name, location, lat, lng, diameter, height, max_speed, website').order('name');
+    if (error) return showError(error.message);
+    tunnels = (data ?? []) as Tunnel[];
+    render();
+  });
+</script>

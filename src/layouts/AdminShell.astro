@@ -4,7 +4,7 @@
 // the slot and is only shown once signed in (initAdmin in lib/admin.ts).
 import Base from './Base.astro';
 
-interface Props { title: string; sub: string; active: 'moderation' | 'places' | 'import' | 'reports' | 'support' | 'storage' }
+interface Props { title: string; sub: string; active: 'moderation' | 'places' | 'tunnels' | 'import' | 'reports' | 'support' | 'storage' }
 const { title, sub, active } = Astro.props;
 ---
 <Base title={title} noindex>
@@ -30,6 +30,7 @@ const { title, sub, active } = Astro.props;
     <nav class="sections" aria-label="Admin sections">
       <a href="/admin" class:list={[active === 'moderation' && 'active']}>Moderation</a>
       <a href="/admin/places" class:list={[active === 'places' && 'active']}>Places</a>
+      <a href="/admin/tunnel-check" class:list={[active === 'tunnels' && 'active']}>Tunnel check</a>
       <a href="/admin/import" class:list={[active === 'import' && 'active']}>Import</a>
       <a href="/admin/reports" class:list={[active === 'reports' && 'active']}>Reports</a>
       <a href="/admin/support" class:list={[active === 'support' && 'active']}>Support</a>
