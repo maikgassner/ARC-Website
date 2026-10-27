@@ -47,3 +47,50 @@ export function plusCodeToCoords(text: string): [number, number] | null {
   }
   return [+(lat + latCell / 2).toFixed(6), +(lng + lngCell / 2).toFixed(6)];
 }
+
+// ---------- Address search (OpenStreetMap — free, no key) ----------
+// Photon for search-as-you-type (Nominatim's policy forbids autocomplete),
+// Nominatim for single lookups — pin → address, and Enter in the field —
+// because Photon's public server is sometimes ~30 s slow. Both time out.
+export type Geo = { lat: number; lng: number; p: Record<string, any> };
+export const cityOf = (p: Record<string, any>) => p.city ?? p.town ?? p.village ?? p.locality ?? p.district ?? p.county ?? '';
+export function formatAddress(p: Record<string, any>): string {
+  const street = [p.street, p.housenumber].filter(Boolean).join(' ');
+  const town = [p.postcode, cityOf(p)].filter(Boolean).join(' ');
+  return [p.name && p.name !== p.street ? p.name : '', street, town, p.country].filter(Boolean).join(', ');
+}
+export const toGeo = (f: any): Geo => ({ lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], p: f.properties ?? {} });
+export const getJson = async (url: string, ms: number) => {
+  const res = await fetch(url, { signal: AbortSignal.timeout(ms) });
+  return res.ok ? res.json() : null;
+};
+// Nominatim result → the same shape as Photon's properties.
+export const fromNominatim = (n: any): Geo => {
+  const a = n.address ?? {};
+  return {
+    lat: Number(n.lat), lng: Number(n.lon),
+    p: {
+      name: n.name || undefined, street: a.road ?? a.pedestrian ?? a.footway, housenumber: a.house_number, postcode: a.postcode,
+      city: a.city ?? a.town ?? a.village ?? a.hamlet ?? a.municipality, county: a.county, country: a.country, countrycode: a.country_code,
+    },
+  };
+};
+export const NOMINATIM = 'https://nominatim.openstreetmap.org';
+export async function searchAddress(q: string): Promise<Geo[]> {
+  const d = await getJson(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=en`, 8000);
+  return (d?.features ?? []).map(toGeo);
+}
+export async function searchAddressNow(q: string): Promise<Geo[]> {
+  const d = await getJson(`${NOMINATIM}/search?q=${encodeURIComponent(q)}&format=jsonv2&addressdetails=1&limit=6&accept-language=en`, 8000);
+  return Array.isArray(d) ? d.map(fromNominatim) : [];
+}
+export async function reverseGeocode(lat: number, lng: number): Promise<Geo | null> {
+  try {
+    const n = await getJson(`${NOMINATIM}/reverse?lat=${lat}&lon=${lng}&format=jsonv2&addressdetails=1&accept-language=en`, 6000);
+    if (n && !n.error) return { ...fromNominatim(n), lat, lng };
+  } catch {}
+  try {
+    const f = (await getJson(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&lang=en`, 8000))?.features?.[0];
+    return f ? { lat, lng, p: f.properties ?? {} } : null;
+  } catch { return null; }
+}

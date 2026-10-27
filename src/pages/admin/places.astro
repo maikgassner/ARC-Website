@@ -243,7 +243,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
 <script>
   import type { SupabaseClient } from '@supabase/supabase-js';
   import { el, add, photoUrl, openLightbox, toast, initAdmin, showError, toAvatar, PROD_ONLY, BUCKET, type Env } from '../../lib/admin';
-  import { parseCoords, placeFromMapsUrl, isShortMapsLink, urlIn } from '../../lib/maps';
+  import { parseCoords, placeFromMapsUrl, isShortMapsLink, urlIn, cityOf, formatAddress, getJson, searchAddress, searchAddressNow, reverseGeocode, type Geo } from '../../lib/maps';
 
   type Kind = 'dz' | 'tunnel';
   type Place = Record<string, any> & { name: string };
@@ -400,52 +400,6 @@ import AdminShell from '../../layouts/AdminShell.astro';
     return parts.join(' · ');
   }
 
-  // ---------- Address search (OpenStreetMap — free, no key) ----------
-  // Photon for search-as-you-type (Nominatim's policy forbids autocomplete),
-  // Nominatim for single lookups — pin → address, and Enter in the field —
-  // because Photon's public server is sometimes ~30 s slow. Both time out.
-  type Geo = { lat: number; lng: number; p: Record<string, any> };
-  const cityOf = (p: Record<string, any>) => p.city ?? p.town ?? p.village ?? p.locality ?? p.district ?? p.county ?? '';
-  function formatAddress(p: Record<string, any>): string {
-    const street = [p.street, p.housenumber].filter(Boolean).join(' ');
-    const town = [p.postcode, cityOf(p)].filter(Boolean).join(' ');
-    return [p.name && p.name !== p.street ? p.name : '', street, town, p.country].filter(Boolean).join(', ');
-  }
-  const toGeo = (f: any): Geo => ({ lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], p: f.properties ?? {} });
-  const getJson = async (url: string, ms: number) => {
-    const res = await fetch(url, { signal: AbortSignal.timeout(ms) });
-    return res.ok ? res.json() : null;
-  };
-  // Nominatim result → the same shape as Photon's properties.
-  const fromNominatim = (n: any): Geo => {
-    const a = n.address ?? {};
-    return {
-      lat: Number(n.lat), lng: Number(n.lon),
-      p: {
-        name: n.name || undefined, street: a.road ?? a.pedestrian ?? a.footway, housenumber: a.house_number, postcode: a.postcode,
-        city: a.city ?? a.town ?? a.village ?? a.hamlet ?? a.municipality, county: a.county, country: a.country, countrycode: a.country_code,
-      },
-    };
-  };
-  const NOMINATIM = 'https://nominatim.openstreetmap.org';
-  async function searchAddress(q: string): Promise<Geo[]> {
-    const d = await getJson(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=en`, 8000);
-    return (d?.features ?? []).map(toGeo);
-  }
-  async function searchAddressNow(q: string): Promise<Geo[]> {
-    const d = await getJson(`${NOMINATIM}/search?q=${encodeURIComponent(q)}&format=jsonv2&addressdetails=1&limit=6&accept-language=en`, 8000);
-    return Array.isArray(d) ? d.map(fromNominatim) : [];
-  }
-  async function reverseGeocode(lat: number, lng: number): Promise<Geo | null> {
-    try {
-      const n = await getJson(`${NOMINATIM}/reverse?lat=${lat}&lon=${lng}&format=jsonv2&addressdetails=1&accept-language=en`, 6000);
-      if (n && !n.error) return { ...fromNominatim(n), lat, lng };
-    } catch {}
-    try {
-      const f = (await getJson(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&lang=en`, 8000))?.features?.[0];
-      return f ? { lat, lng, p: f.properties ?? {} } : null;
-    } catch { return null; }
-  }
 
   // Downscale big desk photos before upload (the app uploads ~0.7 quality JPEGs).
   async function toJpeg(file: File, max = 1800): Promise<Blob> {
