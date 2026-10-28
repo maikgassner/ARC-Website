@@ -11,6 +11,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   <div data-list-view>
     <div class="toolbar">
       <input type="search" placeholder="Search by name, country or town…" data-search aria-label="Search">
+      <select data-country aria-label="Country"><option value="">All countries</option></select>
       <div class="kind-pills" role="tablist">
         <button type="button" data-kind-filter="all" aria-selected="true">All</button>
         <button type="button" data-kind-filter="dz" aria-selected="false">Dropzones</button>
@@ -52,6 +53,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   /* ---------- List ---------- */
   .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
   .toolbar input[type="search"] { flex: 1 1 260px; width: auto; }
+  .toolbar select { flex: 0 1 220px; width: auto; }
   .kind-pills { display: flex; gap: 6px; }
   .kind-pills button, :global(.chip-suggest) {
     border: 0; cursor: pointer; font: 600 .9rem var(--font); padding: 9px 16px; border-radius: 999px;
@@ -426,6 +428,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   const editor = $<HTMLFormElement>('[data-editor]');
   const fieldsBox = $<HTMLElement>('[data-fields]');
   const searchInput = $<HTMLInputElement>('[data-search]');
+  const countrySelect = $<HTMLSelectElement>('[data-country]');
   const kindToggle = $<HTMLElement>('[data-kind-toggle]');
 
   // ---------- List ----------
@@ -442,14 +445,53 @@ import AdminShell from '../../layouts/AdminShell.astro';
       ...(dz.data ?? []).map((p: Place) => ({ ...p, kind: 'dz' as Kind })),
       ...(tu.data ?? []).map((p: Place) => ({ ...p, kind: 'tunnel' as Kind })),
     ].sort((a, b) => a.name.localeCompare(b.name));
+    fillCountries();
     renderList();
   }
 
+  // Country of a place: dropzones have it as a column, tunnels at the end of
+  // "Town, Country". The search also knows the German name and the ISO code
+  // ("Schweiz", "CH" find Switzerland), and ignores accents.
+  const countryOf = (p: Place) => (p.kind === 'dz' ? p.country : String(p.location ?? '').split(',').pop())?.trim() || '';
+  const fold = (x: string) => x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const COUNTRY_ALIASES = (() => {
+    const map = new Map<string, string>();
+    try {
+      const en = new Intl.DisplayNames(['en'], { type: 'region' });
+      const de = new Intl.DisplayNames(['de'], { type: 'region' });
+      const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      for (const a of A) for (const b of A) {
+        const code = a + b;
+        const name = en.of(code);
+        if (name && name !== code) map.set(fold(name), `${code} ${de.of(code) ?? ''}`);
+      }
+    } catch { /* old browser: English names only */ }
+    map.set(fold('United States'), 'US USA Vereinigte Staaten');
+    map.set(fold('United Kingdom'), 'GB UK Vereinigtes Königreich England');
+    return map;
+  })();
+  const haystack = (p: Place) => {
+    const c = countryOf(p);
+    return fold([p.name, p.country, p.location, p.address, COUNTRY_ALIASES.get(fold(c))].filter(Boolean).join(' '));
+  };
+  function fillCountries() {
+    const counts = new Map<string, number>();
+    for (const p of places) { const c = countryOf(p); if (c) counts.set(c, (counts.get(c) ?? 0) + 1); }
+    const keep = countrySelect.value;
+    countrySelect.replaceChildren(
+      el('option', { value: '', textContent: 'All countries' }),
+      ...[...counts].sort((a, b) => a[0].localeCompare(b[0])).map(([c, n]) => el('option', { value: c, textContent: `${c} (${n})` })),
+    );
+    countrySelect.value = counts.has(keep) ? keep : '';
+  }
+
   function renderList() {
-    const q = searchInput.value.trim().toLowerCase();
+    const q = fold(searchInput.value.trim());
+    const country = countrySelect.value;
     const shown = places.filter((p) =>
       (kindFilter === 'all' || p.kind === kindFilter) &&
-      (!q || [p.name, p.country, p.location, p.address].some((x) => x?.toLowerCase().includes(q))));
+      (!country || countryOf(p) === country) &&
+      (!q || haystack(p).includes(q)));
     $<HTMLElement>('[data-list-count]').textContent =
       `${shown.length} of ${places.length} places · ${places.filter((p) => p.kind === 'dz').length} dropzones, ${places.filter((p) => p.kind === 'tunnel').length} tunnels`;
     $<HTMLElement>('[data-places]').replaceChildren(...shown.map((p) => {
@@ -475,6 +517,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   }
 
   searchInput.addEventListener('input', renderList);
+  countrySelect.addEventListener('change', renderList);
   $$<HTMLButtonElement>('[data-kind-filter]').forEach((b) => b.addEventListener('click', () => {
     kindFilter = b.dataset.kindFilter as typeof kindFilter;
     $$<HTMLButtonElement>('[data-kind-filter]').forEach((x) => x.setAttribute('aria-selected', String(x === b)));
