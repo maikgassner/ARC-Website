@@ -68,7 +68,7 @@ export const PRIVACY: LegalSection[] = [
       'logwitharc.app is hosted by Vercel, which keeps short-lived server logs (such as IP address and browser) to deliver and protect the site. USA.',
       'Beta sign-up: the email address you enter is stored in our database so we can invite you to the beta. Write to us to have it removed.',
       'Contact form: your name, email and message are sent through Web3Forms (India; servers in the USA; it forwards them without storing them) to our inbox so we can reply.',
-      'The website sets no cookies and uses no analytics.',
+      'The website sets no cookies. Vercel Web Analytics counts visits (page, country, device, where a visit came from) without cookies and without identifying you; nothing about you is stored. USA.',
     ],
   },
   {
