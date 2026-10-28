@@ -51,6 +51,71 @@ import AdminShell from '../../layouts/AdminShell.astro';
     <h2>Top dropzones · last 30 days</h2>
     <div class="card scroll"><table class="table" data-top-dzs></table></div>
   </section>
+  <!-- ======= How Arc is used (app_events, migration 0121) ======= -->
+  <div class="ux-head">
+    <h2 class="ux-title">How Arc is used</h2>
+    <div class="pills" role="radiogroup" aria-label="UX period">
+      <button type="button" role="radio" data-days="7">7 days</button>
+      <button type="button" role="radio" data-days="30">30 days</button>
+      <button type="button" role="radio" data-days="90">90 days</button>
+    </div>
+  </div>
+  <p class="note">From the app's own usage events (people who switched off "Share usage data" aren't counted). Only from the build that records them on.</p>
+  <div class="tiles ux" data-ux-tiles></div>
+
+  <div class="two">
+    <section>
+      <h2>How sessions start</h2>
+      <div class="card" data-ux-entries></div>
+      <p class="note">Push = a notification from Arc was tapped · Reminder = a dropzone / tunnel notification · Direct = opened Arc themselves.</p>
+    </section>
+    <section>
+      <h2>Session length</h2>
+      <div class="card" data-ux-lengths></div>
+      <p class="note">Time actually on screen per session (a session ends after 30 min away).</p>
+    </section>
+  </div>
+
+  <section>
+    <h2>Where time is spent</h2>
+    <div class="card scroll"><table class="table" data-ux-screens></table></div>
+    <p class="note">Total = all time on that screen; typical = median per visit.</p>
+  </section>
+
+  <div class="two">
+    <section>
+      <h2>Most done</h2>
+      <div class="card" data-ux-actions></div>
+    </section>
+    <section>
+      <h2>Done per session</h2>
+      <div class="card" data-ux-session-tasks></div>
+      <p class="note">Share of sessions with that action at least once.</p>
+    </section>
+  </div>
+
+  <div class="two">
+    <section>
+      <h2>Premium funnel</h2>
+      <div class="card" data-ux-paywall></div>
+      <p class="note" data-ux-paywall-note></p>
+    </section>
+    <section>
+      <h2>Where sessions land</h2>
+      <div class="card" data-ux-landings></div>
+    </section>
+  </div>
+
+  <div class="two">
+    <section>
+      <h2>Common paths</h2>
+      <div class="card" data-ux-flows></div>
+    </section>
+    <section>
+      <h2>Notifications opened</h2>
+      <div class="card" data-ux-notifications></div>
+    </section>
+  </div>
 </AdminShell>
 
 <style>
@@ -78,6 +143,10 @@ import AdminShell from '../../layouts/AdminShell.astro';
   .card { background: var(--surface); box-shadow: var(--shadow); border-radius: 18px; padding: 18px; }
   .card.scroll { overflow-x: auto; padding: 6px 0; }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .ux-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 64px; padding-top: 28px; border-top: 1px solid var(--ink-200); }
+  .ux-title { font-size: 1.5rem; margin: 0; }
+  .tiles.ux { grid-template-columns: repeat(6, 1fr); }
+  @media (max-width: 1000px) { .tiles.ux { grid-template-columns: repeat(3, 1fr); } }
   @media (max-width: 860px) { .two { grid-template-columns: 1fr; } }
 
   /* Users per month: pairs of bars */
@@ -273,5 +342,95 @@ import AdminShell from '../../layouts/AdminShell.astro';
   q('[data-country-month]').addEventListener('change', renderCountries);
   q('[data-csv]').addEventListener('click', downloadCsv);
 
-  initAdmin((client) => { sb = client; return load(); });
+  // ---------- How Arc is used (admin_ux_report, migration 0121) ----------
+  type Ux = {
+    generated_at: string;
+    totals: Record<string, number | null>;
+    screens: { screen: string; views: number; users: number; total_min: number; median_s: number }[];
+    actions: { name: string; times: number; users: number }[];
+    paywall: { viewed: number; selected: number; tapped: number; purchased: number; sources: Record<string, number>; plans: Record<string, number> };
+    flows: { from_screen: string; to_screen: string; times: number }[];
+    entries: Record<string, number>;
+    session_lengths: Record<string, number>;
+    landings: { screen: string; sessions: number }[];
+    session_tasks: { name: string; sessions: number }[];
+    notifications: { target: string; kind: string; opens: number }[];
+  };
+  let uxDays = 30;
+  const ACTION_LABEL: Record<string, string> = {
+    jump_logged: 'Jump logged', jumps_imported: 'Jumps imported', tunnel_logged: 'Tunnel session logged',
+    signature_requested: 'Signature requested', post_created: 'Post shared', stats_filter_used: 'Statistics filtered',
+    weather_day_opened: 'Weather day opened', paywall_viewed: 'Premium page seen', plan_selected: 'Plan picked',
+    purchase_tapped: 'Buy tapped', purchase_completed: 'Bought Premium', restore_tapped: 'Restore tapped', notification_opened: 'Notification opened',
+  };
+  const actionLabel = (n: string) => ACTION_LABEL[n] ?? n.replace(/_/g, ' ');
+  const SCREEN_LABEL: Record<string, string> = { '/': 'Home', '/map': 'Map', '/logbook': 'Logbook', '/profile': 'Profile', '/location': 'Dropzone / tunnel page', '/premium': 'Premium page' };
+  const screenLabel = (p: string) => SCREEN_LABEL[p] ?? p.replace(/^\//, '').replace(/[-/]/g, ' ').replace(/^./, (c) => c.toUpperCase());
+  const mins = (m: number | null | undefined) => (m == null ? '–' : m < 1 ? `${Math.round(m * 60)} s` : `${m.toLocaleString('de-CH')} min`);
+
+  async function loadUx() {
+    document.querySelectorAll<HTMLButtonElement>('[data-days]').forEach((b) => b.setAttribute('aria-checked', String(Number(b.dataset.days) === uxDays)));
+    const { data, error } = await sb.rpc('admin_ux_report', { p_days: uxDays });
+    if (error) {
+      q('[data-ux-tiles]').replaceChildren(el('p', { class: 'empty' }, error.message.includes('admin_ux_report') ? 'Needs migration 0121 on this database.' : error.message));
+      return;
+    }
+    renderUx(data as Ux);
+  }
+
+  function renderUx(u: Ux) {
+    const t = u.totals;
+    q('[data-ux-tiles]').replaceChildren(...([
+      [nf(Number(t.users ?? 0)), 'People'], [nf(Number(t.sessions ?? 0)), 'Sessions'], [String(t.sessions_per_user ?? '–'), 'Sessions per person'],
+      [mins(t.avg_session_min as number), 'Avg session'], [mins(t.median_session_min as number), 'Typical session'], [String(t.tasks_per_session ?? '–'), 'Tasks per session'],
+    ] as const).map(([v, label]) => el('div', { class: 'r-tile' }, el('strong', {}, v), el('span', {}, label))));
+
+    const sessions = Number(t.sessions ?? 0);
+    const ENTRY: Record<string, string> = { direct: 'Opened Arc directly', push: 'Tapped a push', reminder: 'Tapped a DZ / tunnel reminder', unknown: 'Unknown (older build)' };
+    const entries = Object.entries(u.entries).sort((a, b) => b[1] - a[1]);
+    q('[data-ux-entries]').replaceChildren(...(entries.length ? entries.map(([k, v]) => hrow(ENTRY[k] ?? k, v, sessions, true)) : [el('p', { class: 'empty' }, 'No sessions yet.')]));
+
+    const L = u.session_lengths ?? {};
+    q('[data-ux-lengths]').replaceChildren(...([['under_1', 'Under 1 min'], ['1_5', '1–5 min'], ['5_15', '5–15 min'], ['over_15', 'Over 15 min']] as const)
+      .map(([k, label]) => hrow(label, L[k] ?? 0, sessions, true)),
+      el('p', { class: 'note' }, `${t.sessions_without_task_pct ?? 0} % of sessions without any task (only looking around).`));
+
+    const screens = q<HTMLTableElement>('[data-ux-screens]');
+    screens.replaceChildren(
+      el('thead', {}, el('tr', {}, el('th', {}, 'Screen'), el('th', {}, 'Total time'), el('th', {}, 'Typical visit'), el('th', {}, 'Views'), el('th', {}, 'People'))),
+      el('tbody', {}, ...(u.screens.length ? u.screens.slice(0, 25).map((x) => el('tr', {},
+        el('td', {}, screenLabel(x.screen), el('small', {}, `  ${x.screen}`)), el('td', {}, mins(x.total_min)), el('td', {}, `${x.median_s} s`), el('td', {}, nf(x.views)), el('td', {}, nf(x.users))))
+        : [el('tr', {}, el('td', { colSpan: 5 }, el('span', { class: 'empty' }, 'No screen views yet.')))])),
+    );
+
+    const people = Math.max(1, Number(t.users ?? 0));
+    const actions = u.actions.filter((a) => a.name !== 'notification_opened');
+    const maxA = Math.max(1, ...actions.map((a) => a.times));
+    q('[data-ux-actions]').replaceChildren(...(actions.length ? actions.slice(0, 12).map((a) => {
+      const row = hrow(actionLabel(a.name), a.times, maxA, false);
+      row.querySelector('b')!.append(el('small', {}, `  ${a.users} ${a.users === 1 ? 'person' : 'people'}`));
+      return row;
+    }) : [el('p', { class: 'empty' }, 'Nothing yet.')]));
+    q('[data-ux-session-tasks]').replaceChildren(...(u.session_tasks.length ? u.session_tasks.map((x) => hrow(actionLabel(x.name), x.sessions, sessions, true)) : [el('p', { class: 'empty' }, 'Nothing yet.')]));
+
+    const p = u.paywall;
+    const top = Math.max(1, p.viewed);
+    q('[data-ux-paywall]').replaceChildren(
+      hrow('Saw the Premium page', p.viewed, top, true), hrow('Picked a plan', p.selected, top, true),
+      hrow('Tapped buy', p.tapped, top, true), hrow('Bought', p.purchased, top, true),
+      el('p', { class: 'note' }, `${nf(Math.max(0, p.viewed - p.purchased))} looked without buying.`));
+    const src = Object.entries(p.sources).map(([k, v]) => `${k} ${v}`).join(' · ');
+    const plans = Object.entries(p.plans).map(([k, v]) => `${k} ${v}`).join(' · ');
+    q('[data-ux-paywall-note]').textContent = [src && `Opened from: ${src}`, plans && `Plans bought: ${plans}`, 'Real purchases come with the store integration; dev previews count as bought.'].filter(Boolean).join('. ');
+
+    q('[data-ux-landings]').replaceChildren(...(u.landings.length ? u.landings.map((x) => hrow(screenLabel(x.screen), x.sessions, sessions, true)) : [el('p', { class: 'empty' }, 'Nothing yet.')]));
+    const maxF = Math.max(1, ...u.flows.map((f) => f.times));
+    q('[data-ux-flows]').replaceChildren(...(u.flows.length ? u.flows.map((f) => hrow(`${screenLabel(f.from_screen)} → ${screenLabel(f.to_screen)}`, f.times, maxF, false)) : [el('p', { class: 'empty' }, 'Nothing yet.')]));
+    const maxN = Math.max(1, ...u.notifications.map((n) => n.opens));
+    q('[data-ux-notifications]').replaceChildren(...(u.notifications.length ? u.notifications.map((n) => hrow(`${screenLabel(n.target)} · ${n.kind}`, n.opens, maxN, false)) : [el('p', { class: 'empty' }, 'None opened yet.')]));
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('[data-days]').forEach((b) => b.addEventListener('click', () => { uxDays = Number(b.dataset.days); loadUx(); }));
+
+  initAdmin((client) => { sb = client; loadUx(); return load(); });
 </script>

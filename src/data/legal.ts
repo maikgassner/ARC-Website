@@ -22,9 +22,10 @@ export const PRIVACY: LegalSection[] = [
       'Social: friends, posts, comments, likes, chat messages, events, reviews, and dropzone / tunnel suggestions and photos.',
       'Reports and feedback: reports you send about people or content, bug reports (with screenshots) and feedback.',
       'Technical: your device\'s push token and platform, and a daily counter of document scans.',
+      'Usage data (you can switch it off): which screens you open and for how long, and actions such as logging a jump or opening the Premium page, with the app version. Linked to your account only so we can count, never shown with your name.',
     ],
     after: [
-      'We use this to run Arc for you: your logbook and documents, your profile, friends and chats. We don\'t sell your data and don\'t use it for advertising. Arc contains no advertising and no analytics or tracking tools.',
+      'We use this to run Arc for you: your logbook and documents, your profile, friends and chats. We don\'t sell your data and don\'t use it for advertising. Arc contains no advertising and no third-party analytics or tracking tools. Usage data stays with us and is only looked at as totals to improve Arc; switch it off anytime in Settings → Share usage data. It is deleted with your account and after 13 months at the latest.',
       'Location: Arc uses your phone\'s location on the device to centre the map and find nearby dropzones. It isn\'t sent to or stored on our servers.',
     ],
   },
