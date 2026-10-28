@@ -346,6 +346,17 @@ const year = new Date().getFullYear();
 </section>
 
 <script>
+  // "What is Arc": the video stage centred in the window (CSS anchors only
+  // align to the top), also when the page opens with #what-is-arc.
+  const centreVideo = (smooth: boolean) =>
+    document.querySelector('#what-is-arc .stage')?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'center' });
+  document.querySelectorAll<HTMLAnchorElement>('a[href="#what-is-arc"]').forEach((a) => a.addEventListener('click', (e) => {
+    e.preventDefault();
+    history.replaceState(null, '', '#what-is-arc');
+    centreVideo(true);
+  }));
+  if (location.hash === '#what-is-arc') requestAnimationFrame(() => centreVideo(false));
+
 // Arc website — tab switching for the feature screenshots + form states.
 
 // App preview video: plays only while on screen; with reduced motion it

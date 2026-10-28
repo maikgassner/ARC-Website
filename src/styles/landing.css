@@ -98,8 +98,6 @@ h1, h2, h3, p { margin: 0; }
    resolve against its parent), so the bezel is always 2.9% of the phone. */
 .phone img, .phone video { display: block; width: 94.2%; height: auto; margin: 2.9%; border-radius: 13.6% / 6.3%; }
 .preview { padding-top: clamp(72px, 9vw, 128px); }
-/* "What is Arc" lands just above the phone, the whole video stage in view. */
-#what-is-arc { scroll-margin-top: calc(40px - clamp(72px, 9vw, 128px)); }
 
 /* ---------- Pill tabs (separate chips, active one filled dark) ---------- */
 .tabs {
