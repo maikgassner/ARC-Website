@@ -4,53 +4,7 @@
 // messages, signatures, setup funnel, top DZs. No tracking tool involved.
 import AdminShell from '../../layouts/AdminShell.astro';
 ---
-<AdminShell title="Reports" sub="How Arc is used, month by month." active="reports">
-  <div class="toolbar">
-    <div class="pills" role="radiogroup" aria-label="Period">
-      <button type="button" role="radio" data-months="6">6 months</button>
-      <button type="button" role="radio" data-months="12">12 months</button>
-      <button type="button" role="radio" data-months="24">24 months</button>
-    </div>
-    <button type="button" class="ghost-btn" data-csv>Download CSV</button>
-  </div>
-  <p class="note" data-generated></p>
-
-  <div class="tiles" data-tiles></div>
-
-  <section>
-    <h2>Users per month</h2>
-    <div class="card"><div class="bars" data-user-bars></div>
-      <div class="legend"><span><i class="sw new"></i>New users</span><span><i class="sw active"></i>Active users (opened Arc)</span></div>
-    </div>
-  </section>
-
-  <section>
-    <h2>Month by month</h2>
-    <div class="card scroll"><table class="table" data-monthly></table></div>
-    <p class="note">Jumps by date added to Arc, split into logged, old jumps added by hand and imported. The split and active users only count from the update that records them (migration 0101) on.</p>
-  </section>
-
-  <div class="two">
-    <section>
-      <div class="sec-head">
-        <h2>New users by country</h2>
-        <select data-country-month aria-label="Month"></select>
-      </div>
-      <div class="card" data-countries></div>
-      <p class="note">From the phone's region at sign-up; older accounts use their home DZ's country until they next open Arc.</p>
-    </section>
-
-    <section>
-      <h2>Profile setup</h2>
-      <div class="card" data-setup></div>
-      <p class="note">How far accounts get, of all accounts. Shows where people stop setting up.</p>
-    </section>
-  </div>
-
-  <section>
-    <h2>Top dropzones · last 30 days</h2>
-    <div class="card scroll"><table class="table" data-top-dzs></table></div>
-  </section>
+<AdminShell title="Reports" sub="How Arc is used: behaviour in the app, then users and content month by month." active="reports">
   <!-- ======= How Arc is used (app_events, migration 0121) ======= -->
   <div class="ux-head">
     <h2 class="ux-title">How Arc is used</h2>
@@ -116,6 +70,53 @@ import AdminShell from '../../layouts/AdminShell.astro';
       <div class="card" data-ux-notifications></div>
     </section>
   </div>
+  <h2 class="ux-title section-break">Users &amp; content</h2>
+  <div class="toolbar">
+    <div class="pills" role="radiogroup" aria-label="Period">
+      <button type="button" role="radio" data-months="6">6 months</button>
+      <button type="button" role="radio" data-months="12">12 months</button>
+      <button type="button" role="radio" data-months="24">24 months</button>
+    </div>
+    <button type="button" class="ghost-btn" data-csv>Download CSV</button>
+  </div>
+  <p class="note" data-generated></p>
+
+  <div class="tiles" data-tiles></div>
+
+  <section>
+    <h2>Users per month</h2>
+    <div class="card"><div class="bars" data-user-bars></div>
+      <div class="legend"><span><i class="sw new"></i>New users</span><span><i class="sw active"></i>Active users (opened Arc)</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Month by month</h2>
+    <div class="card scroll"><table class="table" data-monthly></table></div>
+    <p class="note">Jumps by date added to Arc, split into logged, old jumps added by hand and imported. The split and active users only count from the update that records them (migration 0101) on.</p>
+  </section>
+
+  <div class="two">
+    <section>
+      <div class="sec-head">
+        <h2>New users by country</h2>
+        <select data-country-month aria-label="Month"></select>
+      </div>
+      <div class="card" data-countries></div>
+      <p class="note">From the phone's region at sign-up; older accounts use their home DZ's country until they next open Arc.</p>
+    </section>
+
+    <section>
+      <h2>Profile setup</h2>
+      <div class="card" data-setup></div>
+      <p class="note">How far accounts get, of all accounts. Shows where people stop setting up.</p>
+    </section>
+  </div>
+
+  <section>
+    <h2>Top dropzones · last 30 days</h2>
+    <div class="card scroll"><table class="table" data-top-dzs></table></div>
+  </section>
 </AdminShell>
 
 <style>
@@ -143,7 +144,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
   .card { background: var(--surface); box-shadow: var(--shadow); border-radius: 18px; padding: 18px; }
   .card.scroll { overflow-x: auto; padding: 6px 0; }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-  .ux-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 64px; padding-top: 28px; border-top: 1px solid var(--ink-200); }
+  .ux-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+  .section-break { margin: 64px 0 0; padding-top: 28px; border-top: 1px solid var(--ink-200); }
   .ux-title { font-size: 1.5rem; margin: 0; }
   .tiles.ux { grid-template-columns: repeat(6, 1fr); }
   @media (max-width: 1000px) { .tiles.ux { grid-template-columns: repeat(3, 1fr); } }
