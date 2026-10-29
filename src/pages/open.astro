@@ -1,0 +1,52 @@
+---
+import Base from '../layouts/Base.astro';
+
+// Landing for places shared from the app: /open?place=<DZ or tunnel name>&where=<Town, Country>.
+// "Open in Arc" hands over to the app (arc://location?focusDz=…, the same
+// deep link the app uses). Later the app claims /open as a universal link
+// and skips this page; until then it's one tap. Name and place come from the
+// link and go in as text only.
+---
+<Base title="Open in Arc" description="A dropzone or wind tunnel shared from Arc, the skydiving logbook app." noindex>
+  <div class="wrap narrow open-page">
+    <div class="card">
+      <img src="/img/arc-icon.png" alt="" width="64" height="64" class="icon">
+      <p class="kicker">Shared from Arc</p>
+      <h1 data-place>A place on Arc</h1>
+      <p class="where" data-where hidden></p>
+      <a class="btn" data-open href="arc://location">Open in Arc</a>
+      <p class="hint">Opens the dropzone or tunnel with its weather, hours and prices in the Arc app.</p>
+      <p class="hint small">No Arc yet? It's in beta right now. <a href="/">See what Arc is</a>.</p>
+    </div>
+  </div>
+</Base>
+
+<style>
+  .open-page { padding-top: 56px; padding-bottom: 72px; }
+  .card { background: var(--surface); border-radius: 24px; box-shadow: var(--shadow); padding: 32px 24px; text-align: center; display: grid; justify-items: center; gap: 6px; }
+  .icon { border-radius: 16px; margin-bottom: 8px; }
+  .kicker { margin: 0; font-size: .8rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--fg-3); }
+  h1 { margin: 0; font-size: clamp(1.6rem, 6vw, 2.2rem); font-weight: 800; line-height: 1.15; }
+  .where { margin: 0; color: var(--fg-2); font-size: 1.05rem; }
+  .btn { margin-top: 18px; display: inline-flex; align-items: center; justify-content: center; min-height: 52px; padding: 0 28px; border-radius: 16px; background: var(--action, #C64E2C); color: #fff; font-weight: 700; text-decoration: none; font-size: 1.05rem; }
+  .hint { margin: 10px 0 0; color: var(--fg-3); font-size: .92rem; max-width: 34ch; }
+  .hint.small { font-size: .85rem; margin-top: 6px; }
+  .hint a { color: var(--accent-text, #B04524); font-weight: 600; }
+</style>
+
+<script>
+  const q = new URLSearchParams(location.search);
+  const place = (q.get('place') ?? '').trim().slice(0, 120);
+  const where = (q.get('where') ?? '').trim().slice(0, 120);
+  if (place) {
+    document.querySelector('[data-place]')!.textContent = place;
+    document.title = `${place} · Arc`;
+    const link = document.querySelector<HTMLAnchorElement>('[data-open]')!;
+    link.href = `arc://location?focusDz=${encodeURIComponent(place)}&focusTs=${Date.now()}`;
+  }
+  if (where) {
+    const el = document.querySelector<HTMLElement>('[data-where]')!;
+    el.textContent = where;
+    el.hidden = false;
+  }
+</script>
