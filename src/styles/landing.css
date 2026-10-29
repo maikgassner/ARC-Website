@@ -474,3 +474,14 @@ h1, h2, h3, p { margin: 0; }
 }
 
 /* Provider identification under the footer */
+
+/* Play button over the app preview when it can't start by itself. */
+.phone { position: relative; }
+.play-btn {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 64px; height: 64px; border-radius: 50%; border: 0; cursor: pointer;
+  display: grid; place-items: center; padding-left: 4px;
+  background: rgba(198, 78, 44, .92); color: #fff; box-shadow: 0 8px 24px rgba(41, 43, 44, .25);
+}
+.play-btn[hidden] { display: none; }
+.play-btn:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }

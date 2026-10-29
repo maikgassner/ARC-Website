@@ -109,6 +109,9 @@ const year = new Date().getFullYear();
         <video data-preview muted loop playsinline preload="metadata" poster="/img/landing/app-preview-poster.jpg" style="background: #fafafa url(/img/landing/app-preview-poster.jpg) center / cover" width="372" height="804" aria-label="Arc app preview: home feed, map, dropzone page and weather, logbook, statistics, profile, documents and logging a jump">
           <source src="/img/landing/app-preview.mp4" type="video/mp4">
         </video>
+        <button type="button" class="play-btn" data-play hidden aria-label="Play the app preview">
+          <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>
+        </button>
       </div>
     </div>
   </div>
@@ -367,14 +370,33 @@ const year = new Date().getFullYear();
 // It starts loading a screen before it's reached, so playback doesn't open on
 // a black frame while the file is still coming in; the poster also sits
 // behind it as background.
+// If it can't start by itself (Low Power Mode, Reduce Motion, a blocked
+// autoplay), a play button over the poster starts it; once it plays the
+// button goes away. A play() that came before the file was ready is retried
+// as soon as it can play.
 const preview = document.querySelector<HTMLVideoElement>('[data-preview]');
-if (preview && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
-  const early = new IntersectionObserver(([e]) => {
-    if (!e.isIntersecting) return;
-    preview.preload = 'auto'; preview.load(); early.disconnect();
-  }, { rootMargin: '800px 0px' });
-  early.observe(preview);
-  new IntersectionObserver(([e]) => { if (e.isIntersecting) preview.play().catch(() => {}); else preview.pause(); }, { threshold: 0.35 }).observe(preview);
+const playBtn = document.querySelector<HTMLButtonElement>('[data-play]');
+if (preview && playBtn) {
+  let visible = false;
+  const showButton = () => { if (preview.paused) playBtn.hidden = false; };
+  const tryPlay = () => preview.play().catch(showButton);
+  preview.addEventListener('playing', () => { playBtn.hidden = true; });
+  preview.addEventListener('canplay', () => { if (visible && preview.paused && playBtn.hidden) tryPlay(); });
+  playBtn.addEventListener('click', () => { preview.preload = 'auto'; tryPlay(); });
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    playBtn.hidden = false;
+  } else {
+    const early = new IntersectionObserver(([e]) => {
+      if (!e.isIntersecting) return;
+      if (preview.preload !== 'auto') { preview.preload = 'auto'; preview.load(); }
+      early.disconnect();
+    }, { rootMargin: '800px 0px' });
+    early.observe(preview);
+    new IntersectionObserver(([e]) => {
+      visible = e.isIntersecting;
+      if (visible) tryPlay(); else preview.pause();
+    }, { threshold: 0.35 }).observe(preview);
+  }
 }
 
 // Feature tabs: each [data-tabs] block swaps its [data-tab-target] image.
