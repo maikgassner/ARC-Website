@@ -12,6 +12,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     <div class="toolbar">
       <input type="search" placeholder="Search by name, country or town…" data-search aria-label="Search">
       <select data-country aria-label="Country"><option value="">All countries</option></select>
+      <select data-sort aria-label="Sort"><option value="name">A–Z</option><option value="recent">Recently added</option></select>
       <div class="kind-pills" role="tablist">
         <button type="button" data-kind-filter="all" aria-selected="true">All</button>
         <button type="button" data-kind-filter="dz" aria-selected="false">Dropzones</button>
@@ -429,6 +430,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   const fieldsBox = $<HTMLElement>('[data-fields]');
   const searchInput = $<HTMLInputElement>('[data-search]');
   const countrySelect = $<HTMLSelectElement>('[data-country]');
+  const sortSelect = $<HTMLSelectElement>('[data-sort]');
   const kindToggle = $<HTMLElement>('[data-kind-toggle]');
 
   // ---------- List ----------
@@ -492,6 +494,9 @@ import AdminShell from '../../layouts/AdminShell.astro';
       (kindFilter === 'all' || p.kind === kindFilter) &&
       (!country || countryOf(p) === country) &&
       (!q || haystack(p).includes(q)));
+    // Recently added: newest first, with the date in the row.
+    const recent = sortSelect.value === 'recent';
+    if (recent) shown.sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')));
     $<HTMLElement>('[data-list-count]').textContent =
       `${shown.length} of ${places.length} places · ${places.filter((p) => p.kind === 'dz').length} dropzones, ${places.filter((p) => p.kind === 'tunnel').length} tunnels`;
     $<HTMLElement>('[data-places]').replaceChildren(...shown.map((p) => {
@@ -509,7 +514,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
           : el('span', { class: `place-avatar${p.kind === 'tunnel' ? ' tunnel' : ''}`, textContent: p.kind === 'dz' ? 'DZ' : 'T' }),
         el('span', {},
           el('strong', { textContent: p.name }),
-          el('small', { textContent: sub || (p.kind === 'dz' ? 'Dropzone' : 'Tunnel') }),
+          el('small', { textContent: [recent && p.created_at && `Added ${new Date(p.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`, sub || (p.kind === 'dz' ? 'Dropzone' : 'Tunnel')].filter(Boolean).join(' · ') }),
           missing.length > 0 && el('small', { class: 'missing', textContent: `Missing: ${missing.map((m) => MISSING_LABEL[m] ?? m.replace(/_/g, ' ')).join(', ')}` }),
         ),
       );
@@ -518,6 +523,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
   searchInput.addEventListener('input', renderList);
   countrySelect.addEventListener('change', renderList);
+  sortSelect.addEventListener('change', renderList);
   $$<HTMLButtonElement>('[data-kind-filter]').forEach((b) => b.addEventListener('click', () => {
     kindFilter = b.dataset.kindFilter as typeof kindFilter;
     $$<HTMLButtonElement>('[data-kind-filter]').forEach((x) => x.setAttribute('aria-selected', String(x === b)));
