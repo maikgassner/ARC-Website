@@ -1,0 +1,17 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["2N4SSPZCZ8.app.logwitharc.arc"],
+        "components": [
+          { "/": "/open", "comment": "Shared places, events and profiles open in Arc" },
+          { "/": "/open/*" }
+        ]
+      },
+      {
+        "appID": "2N4SSPZCZ8.app.logwitharc.arc",
+        "paths": ["/open", "/open/*"]
+      }
+    ]
+  }
+}

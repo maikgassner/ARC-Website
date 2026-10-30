@@ -1,21 +1,25 @@
 ---
 import Base from '../layouts/Base.astro';
 
-// Landing for places shared from the app: /open?place=<DZ or tunnel name>&where=<Town, Country>.
-// "Open in Arc" hands over to the app (arc://location?focusDz=…, the same
-// deep link the app uses). Later the app claims /open as a universal link
-// and skips this page; until then it's one tap. Name and place come from the
-// link and go in as text only.
+// Landing for links shared from the app (utils/shareLinks there):
+//   /open?place=<DZ or tunnel name>&where=<Town, Country>
+//   /open?event=<id>&title=<title>&where=<date · place>
+//   /open?profile=<user id>&name=<name>
+// The app claims /open as a universal link (public/.well-known/
+// apple-app-site-association), so with Arc installed the link opens the app
+// and this page is only seen without it, or before that build. "Open in Arc"
+// hands over with the same arc:// deep links the app uses. Everything comes
+// from the link and goes in as text only; ids must be UUIDs.
 ---
 <Base title="Open in Arc" description="A dropzone or wind tunnel shared from Arc, the skydiving logbook app." noindex>
   <div class="wrap narrow open-page">
     <div class="card">
       <img src="/img/arc-icon.png" alt="" width="64" height="64" class="icon">
-      <p class="kicker">Shared from Arc</p>
+      <p class="kicker" data-kicker>Shared from Arc</p>
       <h1 data-place>A place on Arc</h1>
       <p class="where" data-where hidden></p>
       <a class="btn" data-open href="arc://location">Open in Arc</a>
-      <p class="hint">Opens the dropzone or tunnel with its weather, hours and prices in the Arc app.</p>
+      <p class="hint" data-hint>Opens the dropzone or tunnel with its weather, hours and prices in the Arc app.</p>
       <p class="hint small">No Arc yet? It's in beta right now. <a href="/">See what Arc is</a>.</p>
     </div>
   </div>
@@ -36,13 +40,33 @@ import Base from '../layouts/Base.astro';
 
 <script>
   const q = new URLSearchParams(location.search);
-  const place = (q.get('place') ?? '').trim().slice(0, 120);
-  const where = (q.get('where') ?? '').trim().slice(0, 120);
-  if (place) {
-    document.querySelector('[data-place]')!.textContent = place;
-    document.title = `${place} · Arc`;
-    const link = document.querySelector<HTMLAnchorElement>('[data-open]')!;
-    link.href = `arc://location?focusDz=${encodeURIComponent(place)}&focusTs=${Date.now()}`;
+  const text = (k: string) => (q.get(k) ?? '').trim().slice(0, 120);
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const event = text('event'), profile = text('profile'), place = text('place');
+  const where = text('where');
+
+  let title = '', href = '', kicker = '', hint = '';
+  if (UUID.test(event)) {
+    title = text('title') || 'An event on Arc';
+    href = `arc://event-detail?id=${event}`;
+    kicker = 'Event on Arc';
+    hint = 'Opens the event in the Arc app, with who is going and everything you need to know.';
+  } else if (UUID.test(profile)) {
+    title = text('name') || 'A skydiver on Arc';
+    href = `arc://skydiver-profile?id=${profile}`;
+    kicker = 'Skydiver on Arc';
+    hint = 'Opens their skydiver profile in the Arc app.';
+  } else if (place) {
+    title = place;
+    href = `arc://location?focusDz=${encodeURIComponent(place)}&focusTs=${Date.now()}`;
+  }
+
+  if (title) {
+    document.querySelector('[data-place]')!.textContent = title;
+    document.title = `${title} · Arc`;
+    document.querySelector<HTMLAnchorElement>('[data-open]')!.href = href;
+    if (kicker) document.querySelector('[data-kicker]')!.textContent = kicker;
+    if (hint) document.querySelector('[data-hint]')!.textContent = hint;
   }
   if (where) {
     const el = document.querySelector<HTMLElement>('[data-where]')!;
