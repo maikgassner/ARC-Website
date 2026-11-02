@@ -13,6 +13,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
 <AdminShell title="Event import" sub="Upcoming events from other calendars: check, link to a place, import." active="event-import">
   <div class="toolbar">
     <select data-source aria-label="Source"></select>
+    <button type="button" class="primary-btn small" data-new>New event</button>
     <label class="check"><input type="checkbox" data-hide-assoc checked> Hide association meetings</label>
     <label class="check"><input type="checkbox" data-hide-done> Hide imported</label>
     <span class="count" data-count></span>
@@ -31,6 +32,12 @@ import AdminShell from '../../layouts/AdminShell.astro';
   :global(.ev.done) { opacity: .6; }
   :global(.ev-img) { width: 132px; height: 132px; border-radius: 14px; object-fit: cover; background: var(--ink-100); cursor: zoom-in; }
   :global(.ev-noimg) { width: 132px; height: 132px; border-radius: 14px; background: var(--ink-100); display: grid; place-items: center; color: var(--fg-3); font-size: .8rem; }
+  :global(.ev-media) { display: grid; gap: 8px; align-content: start; }
+  :global(.ev-upload) { font: inherit; font-size: .8rem; font-weight: 700; color: var(--action, #C64E2C); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+  :global(.ev.draft) { outline: 2px dashed var(--ink-100); }
+  :global(.ev-field input.not-on-arc) { border-color: #E8A33D; background: #FFF7E8; }
+  :global(.ev-field .hint .warn) { color: #8A5A00; }
+  :global(.ev-field .hint .warn a) { color: inherit; text-decoration: underline; }
   :global(.ev-body) { display: grid; gap: 10px; min-width: 0; }
   :global(.ev-meta) { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: .82rem; font-weight: 700; color: var(--fg-3); }
   :global(.ev-tag) { padding: 2px 8px; border-radius: 999px; background: var(--ink-100); color: var(--fg-2); }
@@ -61,7 +68,9 @@ import AdminShell from '../../layouts/AdminShell.astro';
   // page: any events page; the Edge Function reads it (no CORS needed) and
   //   Claude lists the dated upcoming events. A new source is one line here.
   type Source = { id: string; label: string; organizer: string; page: string; skipTypes?: string[] }
-    & ({ kind: 'elfsight'; widget: string } | { kind: 'page' });
+    & ({ kind: 'elfsight'; widget: string } | { kind: 'page' } | { kind: 'manual' });
+  // Events made here from scratch ("New event"): source 'admin', a random id.
+  const MANUAL: Source = { kind: 'manual', id: 'admin', label: 'Created here', organizer: '', page: '' };
   const SOURCES: Source[] = [
     { kind: 'elfsight', id: 'swissskydive', label: 'Swiss Skydive · Eventskalendar', organizer: 'Swiss Skydive',
       page: 'https://home.swissskydive.org/eventskalendar', widget: '395c7aa7-b567-4849-8b41-3911faa0b3a3', skipTypes: ['Association'] },
@@ -78,11 +87,15 @@ import AdminShell from '../../layouts/AdminShell.astro';
     src: Source; id: string; title: string; start: string; end: string | null; type: string;
     locName: string; locAddress: string; locWebsite: string;
     description: string; image: string | null; link: string | null;
+    // Set while editing a card, so a re-render (filters, other imports) keeps it.
+    file?: File; organizer?: string; arcPlace?: string; discs?: string[];
   };
 
   let sb: SupabaseClient;
   let selected: Source[] = SOURCES;
   let items: Item[] = [];
+  // "New event" forms, on top until imported (not affected by the filters).
+  let drafts: Item[] = [];
   let failed: string[] = [];
   let places: Place[] = [];
   let imported = new Set<string>(); // `${source}|${source_id}`
@@ -134,6 +147,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   const slug = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
   async function fetchSource(src: Source): Promise<Item[]> {
+    if (src.kind === 'manual') return [];
     if (src.kind === 'page') {
       const { data, error } = await sb.functions.invoke('admin-fill-from-website', { body: { mode: 'events', url: src.page } });
       if (error) {
@@ -182,7 +196,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     q('[data-count]').textContent = `${shown.length} upcoming · ${open} to import`;
     const list = q<HTMLElement>('[data-list]');
     const problems = failed.map((f) => el('p', { class: 'note', textContent: `⚠︎ ${f}` }));
-    list.replaceChildren(...problems, ...(shown.length ? shown.map(card) : [el('p', { class: 'note', textContent: 'No upcoming events here.' })]));
+    list.replaceChildren(...drafts.map(card), ...problems, ...(shown.length ? shown.map(card) : [el('p', { class: 'note', textContent: 'No upcoming events here.' })]));
   }
 
   function card(it: Item) {
@@ -191,56 +205,99 @@ import AdminShell from '../../layouts/AdminShell.astro';
     const field = (label: string, input: HTMLElement, opts: { full?: boolean; hint?: string } = {}) =>
       el('label', { class: `ev-field${opts.full ? ' full' : ''}` }, label, input, opts.hint && el('span', { class: 'hint', textContent: opts.hint }));
 
-    const title = el('input', { value: it.title });
+    const title = el('input', { value: it.title, placeholder: 'e.g. Freefly Boogie 2027' });
     const start = el('input', { type: 'date', value: it.start });
     const end = el('input', { type: 'date', value: it.end ?? '' });
-    const arcPlace = el('input', { value: place?.name ?? '', placeholder: 'No Arc place (event shows the text below)' });
-    arcPlace.setAttribute('list', 'places');
-    const placeText = el('input', { value: place?.name ?? [it.locName, it.locAddress].filter(Boolean).join(', ') });
-    arcPlace.addEventListener('change', () => { if (places.some((p) => p.name === arcPlace.value)) placeText.value = arcPlace.value; });
+    // One place field: an Arc dropzone / tunnel from the list, or — marked —
+    // free text (then either keep it, or add the place in Places first).
+    const placeIn = el('input', { value: it.arcPlace ?? place?.name ?? [it.locName, it.locAddress].filter(Boolean).join(', '), placeholder: 'Pick a dropzone or tunnel' });
+    placeIn.setAttribute('list', 'places');
+    const placeHint = el('span', { class: 'hint' });
+    const paintPlace = () => {
+      const onArc = places.find((p) => p.name === placeIn.value.trim());
+      const empty = !placeIn.value.trim();
+      placeIn.classList.toggle('not-on-arc', !onArc && !empty);
+      placeHint.replaceChildren(
+        onArc ? `✓ On Arc (${onArc.kind === 'tunnel' ? 'tunnel' : 'dropzone'}), the event links to it`
+        : empty ? 'No place'
+        : el('span', { class: 'warn' }, 'Not on Arc: saved as free text, no link. ',
+            el('a', { href: '/admin/places', target: '_blank', rel: 'noopener', textContent: 'Add it in Places ↗' }),
+            ' then pick it here.'),
+      );
+    };
+    paintPlace();
+    placeIn.addEventListener('input', paintPlace);
+    const organizer = el('input', { value: it.organizer ?? it.src.organizer, placeholder: 'Who runs it, e.g. Skydive Empuriabrava' });
     const link = el('input', { value: it.link ?? '', placeholder: 'https://' });
     const desc = el('textarea', { value: it.description });
-    const picked = new Set(guessDiscs(it, place));
+    const picked = new Set(it.discs ?? guessDiscs(it, place));
     const discs = el('div', { class: 'ev-discs' }, ...DISCS.map((d) => {
       const b = el('button', { type: 'button', class: 'ev-disc', textContent: d, 'aria-pressed': String(picked.has(d)) });
-      b.addEventListener('click', () => { picked.has(d) ? picked.delete(d) : picked.add(d); b.setAttribute('aria-pressed', String(picked.has(d))); });
+      b.addEventListener('click', () => { picked.has(d) ? picked.delete(d) : picked.add(d); it.discs = [...picked]; b.setAttribute('aria-pressed', String(picked.has(d))); });
       return b;
     }));
 
-    const btn = el('button', { type: 'button', class: 'primary-btn small', textContent: done ? 'In Arc' : 'Import', disabled: done });
+    // Edits live on the item, so a re-render doesn't lose them.
+    title.addEventListener('input', () => { it.title = title.value; });
+    start.addEventListener('input', () => { it.start = start.value; });
+    end.addEventListener('input', () => { it.end = end.value || null; });
+    placeIn.addEventListener('input', () => { it.arcPlace = placeIn.value; });
+    organizer.addEventListener('input', () => { it.organizer = organizer.value; });
+    link.addEventListener('input', () => { it.link = link.value || null; });
+    desc.addEventListener('input', () => { it.description = desc.value; });
+
+    const isDraft = it.src.kind === 'manual';
+    const btn = el('button', { type: 'button', class: 'primary-btn small', textContent: done ? 'In Arc' : isDraft ? 'Create event' : 'Import', disabled: done });
     btn.addEventListener('click', async () => {
       if (!title.value.trim() || !start.value) return toast('Title and start date are needed');
+      if (!organizer.value.trim()) return toast('Who organises it?');
       btn.disabled = true; btn.textContent = 'Importing…';
       try {
-        const p = places.find((x) => x.name === arcPlace.value.trim()) ?? null;
-        const photo_path = it.image ? await copyImage(it) : null;
+        const p = places.find((x) => x.name === placeIn.value.trim()) ?? null;
+        const photo_path = it.file || it.image ? await copyImage(it) : null;
         const { error } = await sb.rpc('admin_import_event', { p_data: {
-          source: it.src.id, source_id: it.id, organizer_name: it.src.organizer,
+          source: it.src.id, source_id: it.id, organizer_name: organizer.value.trim(),
           title: title.value.trim(), event_date: start.value, end_date: end.value && end.value !== start.value ? end.value : null,
-          place: placeText.value.trim() || p?.name || '', dz_name: p?.kind === 'dz' ? p.name : null,
+          place: p?.name ?? placeIn.value.trim(), dz_name: p?.kind === 'dz' ? p.name : null,
           lat: p?.lat ?? null, lng: p?.lng ?? null, photo_path,
           description: desc.value.trim(), discs: [...picked], website: link.value.trim() || null,
         } });
         if (error) throw error;
         imported.add(key(it));
-        toast(`Imported: ${title.value.trim()}`);
+        drafts = drafts.filter((d) => d !== it);
+        toast(`${isDraft ? 'Created' : 'Imported'}: ${title.value.trim()}`);
         render();
       } catch (e: any) {
-        btn.disabled = false; btn.textContent = 'Import';
+        btn.disabled = false; btn.textContent = isDraft ? 'Create event' : 'Import';
         showError(e?.message ?? String(e));
       }
     });
 
-    const img = it.image
-      ? el('img', { class: 'ev-img', src: it.image, alt: '', loading: 'lazy', onclick: () => openLightbox(it.image!) })
-      : el('div', { class: 'ev-noimg', textContent: 'No image' });
+    // Own picture: picked here, uploaded on import (replaces the source's).
+    const fileInput = el('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp', hidden: true });
+    fileInput.addEventListener('change', () => {
+      const f = fileInput.files?.[0];
+      if (!f) return;
+      if (f.size > 8 * 1024 * 1024) return toast('That image is over 8 MB');
+      it.file = f;
+      it.image = URL.createObjectURL(f);
+      render();
+    });
+    const img = el('div', { class: 'ev-media' },
+      it.image
+        ? el('img', { class: 'ev-img', src: it.image, alt: '', loading: 'lazy', onclick: () => openLightbox(it.image!) })
+        : el('div', { class: 'ev-noimg', textContent: 'No image' }),
+      !done && el('button', { type: 'button', class: 'ev-upload', textContent: it.image ? 'Change image' : 'Upload image', onclick: () => fileInput.click() }),
+      !done && it.file && el('button', { type: 'button', class: 'ev-upload', textContent: 'Remove image', onclick: () => { it.file = undefined; it.image = null; render(); } }),
+      fileInput,
+    );
 
-    return el('article', { class: `ev${done ? ' done' : ''}` },
+    return el('article', { class: `ev${done ? ' done' : ''}${isDraft ? ' draft' : ''}` },
       img,
       el('div', { class: 'ev-body' },
         el('div', { class: 'ev-meta' },
-          el('span', { textContent: it.end ? `${fmt(it.start)} – ${fmt(it.end)}` : fmt(it.start) }),
-          selected.length > 1 && el('span', { class: 'ev-tag', textContent: it.src.label }),
+          isDraft ? el('span', { class: 'ev-tag', textContent: 'New event' }) : el('span', { textContent: it.end ? `${fmt(it.start)} – ${fmt(it.end)}` : fmt(it.start) }),
+          !isDraft && selected.length > 1 && el('span', { class: 'ev-tag', textContent: it.src.label }),
           it.type && el('span', { class: 'ev-tag', textContent: it.type }),
           it.locName && el('span', { textContent: `📍 ${it.locName}` }),
           done && el('span', { class: 'ev-tag ok', textContent: 'In Arc' }),
@@ -248,14 +305,16 @@ import AdminShell from '../../layouts/AdminShell.astro';
         el('div', { class: 'ev-grid' },
           field('Title', title, { full: true }),
           field('Start', start), field('End', end, { hint: 'Empty for a one-day event' }),
-          field('Arc place', arcPlace, { hint: place ? 'Matched automatically, check it' : 'No match: pick one or leave empty' }),
-          field('Place text', placeText),
+          el('label', { class: 'ev-field full' }, 'Place', placeIn, placeHint),
+          field('Organizer', organizer, { full: true, hint: 'Shown as the event\'s organiser in Arc' }),
           field('Link', link, { full: true }),
           field('Description', desc, { full: true }),
           field('Disciplines', discs, { full: true }),
         ),
         el('div', { class: 'ev-actions' },
-          el('a', { href: it.link || it.src.page, target: '_blank', rel: 'noopener', textContent: `Open on ${it.src.label} ↗` }),
+          isDraft
+            ? el('button', { type: 'button', class: 'ev-upload', textContent: 'Discard', onclick: () => { drafts = drafts.filter((d) => d !== it); render(); } })
+            : el('a', { href: it.link || it.src.page, target: '_blank', rel: 'noopener', textContent: `Open on ${it.src.label} ↗` }),
           btn,
         ),
       ),
@@ -266,9 +325,13 @@ import AdminShell from '../../layouts/AdminShell.astro';
   // like a photo picked in the app.
   async function copyImage(it: Item): Promise<string | null> {
     try {
-      const res = await fetch(it.image!);
-      if (!res.ok) return null;
-      const blob = await res.blob();
+      let blob: Blob;
+      if (it.file) blob = it.file;
+      else {
+        const res = await fetch(it.image!);
+        if (!res.ok) return null;
+        blob = await res.blob();
+      }
       const ext = blob.type === 'image/png' ? 'png' : blob.type === 'image/webp' ? 'webp' : 'jpg';
       const { data: { user } } = await sb.auth.getUser();
       const path = `${user!.id}/import-${it.src.id}-${it.id}.${ext}`;
@@ -314,6 +377,12 @@ import AdminShell from '../../layouts/AdminShell.astro';
   select.addEventListener('change', () => {
     selected = select.value === ALL ? SOURCES : SOURCES.filter((s) => s.id === select.value);
     load();
+  });
+  q('[data-new]').addEventListener('click', () => {
+    drafts.unshift({ src: MANUAL, id: crypto.randomUUID(), title: '', start: '', end: null, type: '',
+      locName: '', locAddress: '', locWebsite: '', description: '', image: null, link: null, discs: [] });
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   });
   q('[data-hide-assoc]').addEventListener('change', render);
   q('[data-hide-done]').addEventListener('change', render);
