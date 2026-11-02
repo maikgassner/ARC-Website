@@ -121,6 +121,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
   :global(.ev-disc[aria-pressed="true"]) { background: var(--action, #C64E2C); border-color: transparent; color: #fff; }
   :global(.ev-actions) { display: flex; gap: 10px; align-items: center; justify-content: flex-end; }
   :global(.ev-actions a) { margin-right: auto; font-size: .85rem; font-weight: 700; }
+  :global(.ev-delete) { margin-right: auto; font: inherit; font-size: .85rem; font-weight: 700; color: var(--no, #C0392B); background: none; border: 1.5px solid currentColor; border-radius: 999px; padding: 7px 14px; cursor: pointer; }
+  :global(.ev-delete:hover) { background: #FDECEA; }
   @media (max-width: 760px) {
     :global(.ev) { grid-template-columns: 1fr; }
     :global(.ev-grid) { grid-template-columns: 1fr; }
@@ -521,7 +523,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
         el('div', { class: 'ev-meta' },
           isEdit ? el('span', { class: 'ev-tag ok', textContent: 'In Arc' })
             : isDraft ? el('span', { class: 'ev-tag', textContent: 'New event' }) : el('span', { textContent: it.end ? `${fmt(it.start)} – ${fmt(it.end)}` : fmt(it.start) }),
-          readOnly && el('span', { class: 'warn', textContent: `Made in the app by ${it.organizer}: only they can change it` }),
+          readOnly && el('span', { class: 'warn', textContent: `Made in the app by ${it.organizer}: only they can change it, you can delete it` }),
           !isDraft && selected.length > 1 && el('span', { class: 'ev-tag', textContent: it.src.label }),
           it.type && el('span', { class: 'ev-tag', textContent: it.type }),
           it.locName && el('span', { textContent: `📍 ${it.locName}` }),
@@ -542,7 +544,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
         ),
         el('div', { class: 'ev-actions' },
           isEdit
-            ? (it.mine ? el('button', { type: 'button', class: 'ev-upload', textContent: 'Delete event', onclick: () => deleteEvent(it) }) : el('span'))
+            ? el('button', { type: 'button', class: 'ev-delete', textContent: 'Delete event', onclick: () => deleteEvent(it) })
             : isDraft
             ? el('button', { type: 'button', class: 'ev-upload', textContent: 'Discard', onclick: () => { drafts = drafts.filter((d) => d !== it); showList(); } })
             : el('a', { href: it.link || it.src.page, target: '_blank', rel: 'noopener', textContent: `Open on ${it.src.label} ↗` }),
@@ -655,7 +657,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
   async function deleteEvent(it: Item) {
     if (!confirm(`Delete "${it.title}" from Arc? People who said they're going lose it too.`)) return;
-    const { error } = await sb.from('events').delete().eq('id', it.editId!);
+    // Any event, also one made in the app (admin_delete_event, 0136).
+    const { error } = await sb.rpc('admin_delete_event', { p_id: it.editId! });
     if (error) return showError(error.message);
     toast(`Deleted: ${it.title}`);
     showList();
