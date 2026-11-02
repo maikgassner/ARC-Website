@@ -45,7 +45,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   :global(.ev-grid) { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   :global(.ev-field) { display: grid; gap: 4px; font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--fg-3); }
   :global(.ev-field.full) { grid-column: 1 / -1; }
-  :global(.ev-field input), :global(.ev-field textarea) { font: inherit; font-size: .92rem; text-transform: none; letter-spacing: 0; color: var(--fg); padding: 8px 10px; border-radius: 10px; border: 1.5px solid var(--ink-100); background: var(--surface); }
+  :global(.ev-field input), :global(.ev-field textarea), :global(.ev-field select) { font: inherit; font-size: .92rem; text-transform: none; letter-spacing: 0; color: var(--fg); padding: 8px 10px; border-radius: 10px; border: 1.5px solid var(--ink-100); background: var(--surface); }
   :global(.ev-field textarea) { min-height: 84px; resize: vertical; }
   :global(.ev-field .hint) { font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--fg-3); }
   :global(.ev-discs) { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -81,6 +81,15 @@ import AdminShell from '../../layouts/AdminShell.astro';
   ];
   const ALL = '__all';
   const DISCS = ['Freefly', 'Belly', 'Wingsuit', 'Angle', 'Speed', 'CRW', 'Canopy', 'Tunnel'];
+  // Optional event type (events.category, 0131) — same keys as the app.
+  const CATEGORIES: [string, string][] = [['', 'No type'], ['boogie', 'Boogie'], ['skills_camp', 'Skills camp'], ['competition', 'Competition'], ['other', 'Other']];
+  function guessCategory(it: Item): string {
+    const t = `${it.type} ${it.title}`.toLowerCase();
+    if (/competition|championship|meisterschaft|world cup|\bcup\b|nationals|\bwm\b|\bsm\b/.test(t)) return 'competition';
+    if (/boogie|festival|fest\b/.test(t)) return 'boogie';
+    if (/camp|skill|clinic|masterclass|coach|course|training|ausbildung|week|invitational|experience/.test(t)) return 'skills_camp';
+    return '';
+  }
 
   type Place = { name: string; kind: 'dz' | 'tunnel'; lat: number | null; lng: number | null; website: string | null };
   type Item = {
@@ -88,7 +97,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     locName: string; locAddress: string; locWebsite: string;
     description: string; image: string | null; link: string | null;
     // Set while editing a card, so a re-render (filters, other imports) keeps it.
-    file?: File; organizer?: string; arcPlace?: string; discs?: string[];
+    file?: File; organizer?: string; arcPlace?: string; discs?: string[]; category?: string;
   };
 
   let sb: SupabaseClient;
@@ -231,6 +240,9 @@ import AdminShell from '../../layouts/AdminShell.astro';
     const link = el('input', { value: it.link ?? '', placeholder: 'https://' });
     const desc = el('textarea', { value: it.description });
     const picked = new Set(it.discs ?? guessDiscs(it, place));
+    const category = el('select', {}, ...CATEGORIES.map(([v, l]) => el('option', { value: v, textContent: l })));
+    category.value = it.category ?? guessCategory(it);
+    category.addEventListener('change', () => { it.category = category.value; });
     const discs = el('div', { class: 'ev-discs' }, ...DISCS.map((d) => {
       const b = el('button', { type: 'button', class: 'ev-disc', textContent: d, 'aria-pressed': String(picked.has(d)) });
       b.addEventListener('click', () => { picked.has(d) ? picked.delete(d) : picked.add(d); it.discs = [...picked]; b.setAttribute('aria-pressed', String(picked.has(d))); });
@@ -261,6 +273,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
           place: p?.name ?? placeIn.value.trim(), dz_name: p?.kind === 'dz' ? p.name : null,
           lat: p?.lat ?? null, lng: p?.lng ?? null, photo_path,
           description: desc.value.trim(), discs: [...picked], website: link.value.trim() || null,
+          category: category.value || null,
         } });
         if (error) throw error;
         imported.add(key(it));
@@ -309,6 +322,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
           field('Organizer', organizer, { full: true, hint: 'Shown as the event\'s organiser in Arc' }),
           field('Link', link, { full: true }),
           field('Description', desc, { full: true }),
+          field('Type', category, { hint: 'Optional' }),
           field('Disciplines', discs, { full: true }),
         ),
         el('div', { class: 'ev-actions' },
