@@ -37,7 +37,6 @@ import AdminShell from '../../layouts/AdminShell.astro';
       <button type="button" class="ghost-btn" data-back>← All events</button>
       <select data-source aria-label="Source"></select>
       <label class="check"><input type="checkbox" data-hide-assoc checked> Hide association meetings</label>
-      <label class="check"><input type="checkbox" data-hide-done> Hide imported</label>
       <span class="count" data-count></span>
     </div>
     <div class="list" data-list></div>
@@ -298,13 +297,14 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
   function render() {
     const hideAssoc = q<HTMLInputElement>('[data-hide-assoc]').checked;
-    const hideDone = q<HTMLInputElement>('[data-hide-done]').checked;
-    const shown = items.filter((it) => !(hideAssoc && it.src.skipTypes?.includes(it.type)) && !(hideDone && imported.has(key(it))));
-    const open = shown.filter((it) => !imported.has(key(it))).length;
-    q('[data-count]').textContent = `${shown.length} upcoming · ${open} to import`;
+    // Events already in Arc don't show here: they're in the list (edit them there).
+    const relevant = items.filter((it) => !(hideAssoc && it.src.skipTypes?.includes(it.type)));
+    const shown = relevant.filter((it) => !imported.has(key(it)));
+    const inArc = relevant.length - shown.length;
+    q('[data-count]').textContent = `${shown.length} to import${inArc ? ` · ${inArc} already in Arc` : ''}`;
     const list = q<HTMLElement>('[data-list]');
     const problems = failed.map((f) => el('p', { class: 'note', textContent: `⚠︎ ${f}` }));
-    list.replaceChildren(...problems, ...(shown.length ? shown.map(card) : [el('p', { class: 'note', textContent: 'No upcoming events here.' })]));
+    list.replaceChildren(...problems, ...(shown.length ? shown.map(card) : [el('p', { class: 'note', textContent: inArc ? 'Everything upcoming here is in Arc already.' : 'No upcoming events here.' })]));
   }
 
   // A card re-renders its own view (image picked, fit changed…).
@@ -680,7 +680,6 @@ import AdminShell from '../../layouts/AdminShell.astro';
     renderEvents();
   }));
   q('[data-hide-assoc]').addEventListener('change', render);
-  q('[data-hide-done]').addEventListener('change', render);
 
   initAdmin(async (client) => {
     sb = client;
