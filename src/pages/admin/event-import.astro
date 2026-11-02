@@ -1,7 +1,10 @@
 ---
 // Import events from outside calendars into Arc (ARC/supabase/migrations/
-// 0126_event_import.sql). First source: Swiss Skydive's Eventskalendar, an
-// Elfsight widget whose settings JSON is public. Each upcoming event is
+// 0126_event_import.sql). Sources: Swiss Skydive's Eventskalendar (an
+// Elfsight widget whose settings JSON is public), and teams' / organisers'
+// events pages, read on the server by Claude (admin-fill-from-website,
+// mode 'events'; poster images when the dates are only on those). "All
+// sources" reads every one of them at once. Each upcoming event is
 // matched to an Arc dropzone / tunnel, checked here and imported one by one
 // (admin_import_event); its cover image is copied into event-photos. An event
 // already imported (events.source + source_id) shows as "In Arc".
@@ -53,27 +56,37 @@ import AdminShell from '../../layouts/AdminShell.astro';
   import type { SupabaseClient } from '@supabase/supabase-js';
   import { el, initAdmin, showError, toast, openLightbox } from '../../lib/admin';
 
-  // Elfsight "Event Calendar" widgets: their settings (events, types,
-  // locations) come from the same public endpoint the widget itself uses.
-  type Source = { id: string; label: string; organizer: string; page: string; widget: string; skipTypes: string[] };
+  // elfsight: an Elfsight "Event Calendar" widget — its settings (events,
+  //   types, locations) come from the public endpoint the widget itself uses.
+  // page: any events page; the Edge Function reads it (no CORS needed) and
+  //   Claude lists the dated upcoming events. A new source is one line here.
+  type Source = { id: string; label: string; organizer: string; page: string; skipTypes?: string[] }
+    & ({ kind: 'elfsight'; widget: string } | { kind: 'page' });
   const SOURCES: Source[] = [
-    { id: 'swissskydive', label: 'Swiss Skydive · Eventskalendar', organizer: 'Swiss Skydive',
+    { kind: 'elfsight', id: 'swissskydive', label: 'Swiss Skydive · Eventskalendar', organizer: 'Swiss Skydive',
       page: 'https://home.swissskydive.org/eventskalendar', widget: '395c7aa7-b567-4849-8b41-3911faa0b3a3', skipTypes: ['Association'] },
+    { kind: 'page', id: 'toratora', label: 'Tora Tora', organizer: 'Tora Tora', page: 'https://www.toratora.eu/events/' },
+    { kind: 'page', id: 'fly4life', label: 'Fly4Life', organizer: 'Team Fly4Life', page: 'https://www.teamfly4life.com/events' },
+    { kind: 'page', id: 'theapes', label: 'The Apes Freefly', organizer: 'The Apes Freefly', page: 'https://www.theapesfreefly.com/eventos-y-experiencias/' },
+    { kind: 'page', id: 'movingdays', label: 'Moving Days', organizer: 'Moving Days', page: 'https://movingdayscamp.com' },
   ];
+  const ALL = '__all';
   const DISCS = ['Freefly', 'Belly', 'Wingsuit', 'Angle', 'Speed', 'CRW', 'Canopy', 'Tunnel'];
 
   type Place = { name: string; kind: 'dz' | 'tunnel'; lat: number | null; lng: number | null; website: string | null };
   type Item = {
-    id: string; title: string; start: string; end: string | null; type: string;
+    src: Source; id: string; title: string; start: string; end: string | null; type: string;
     locName: string; locAddress: string; locWebsite: string;
     description: string; image: string | null; link: string | null;
   };
 
   let sb: SupabaseClient;
-  let source = SOURCES[0];
+  let selected: Source[] = SOURCES;
   let items: Item[] = [];
+  let failed: string[] = [];
   let places: Place[] = [];
-  let imported = new Set<string>();
+  let imported = new Set<string>(); // `${source}|${source_id}`
+  const key = (it: Item) => `${it.src.id}|${it.id}`;
   const q = <T extends Element>(s: string) => document.querySelector<T>(s)!;
 
   // Accents, case and filler words don't count when comparing names.
@@ -117,7 +130,23 @@ import AdminShell from '../../layouts/AdminShell.astro';
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
   const fmt = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
+  // A page event has no id of its own: title + start day stand in for one.
+  const slug = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
   async function fetchSource(src: Source): Promise<Item[]> {
+    if (src.kind === 'page') {
+      const { data, error } = await sb.functions.invoke('admin-fill-from-website', { body: { mode: 'events', url: src.page } });
+      if (error) {
+        const msg = await (error as any).context?.json?.().then((j: any) => j?.error).catch(() => null);
+        throw new Error(msg ?? error.message);
+      }
+      return ((data?.events ?? []) as any[]).map((e): Item => ({
+        src, id: `${slug(e.title)}-${e.start}`, title: String(e.title ?? '').trim(),
+        start: e.start, end: e.end && e.end !== e.start ? e.end : null, type: '',
+        locName: e.place ?? '', locAddress: '', locWebsite: '',
+        description: e.description ?? '', image: null, link: e.link ?? null,
+      })).sort((a, b) => a.start.localeCompare(b.start));
+    }
     const url = `https://core.service.elfsight.com/p/boot/?page=${encodeURIComponent(src.page)}&w=${src.widget}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Calendar didn't load (${res.status})`);
@@ -132,7 +161,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
         const loc = locs.get(e.location?.[0]) ?? {};
         const link = (e.actions ?? []).find((a: any) => a.link?.value)?.link.value ?? null;
         return {
-          id: String(e.id), title: String(e.name ?? '').trim(),
+          src, id: String(e.id), title: String(e.name ?? '').trim(),
           start: e.start?.date, end: e.end?.date && e.end.date !== e.start?.date ? e.end.date : null,
           type: types.get(e.eventType?.[0]) ?? '',
           locName: loc.name ?? '', locAddress: loc.address ?? '', locWebsite: loc.website ?? '',
@@ -148,15 +177,16 @@ import AdminShell from '../../layouts/AdminShell.astro';
   function render() {
     const hideAssoc = q<HTMLInputElement>('[data-hide-assoc]').checked;
     const hideDone = q<HTMLInputElement>('[data-hide-done]').checked;
-    const shown = items.filter((it) => !(hideAssoc && source.skipTypes.includes(it.type)) && !(hideDone && imported.has(it.id)));
-    const open = shown.filter((it) => !imported.has(it.id)).length;
+    const shown = items.filter((it) => !(hideAssoc && it.src.skipTypes?.includes(it.type)) && !(hideDone && imported.has(key(it))));
+    const open = shown.filter((it) => !imported.has(key(it))).length;
     q('[data-count]').textContent = `${shown.length} upcoming · ${open} to import`;
     const list = q<HTMLElement>('[data-list]');
-    list.replaceChildren(...(shown.length ? shown.map(card) : [el('p', { class: 'note', textContent: 'No upcoming events in this calendar.' })]));
+    const problems = failed.map((f) => el('p', { class: 'note', textContent: `⚠︎ ${f}` }));
+    list.replaceChildren(...problems, ...(shown.length ? shown.map(card) : [el('p', { class: 'note', textContent: 'No upcoming events here.' })]));
   }
 
   function card(it: Item) {
-    const done = imported.has(it.id);
+    const done = imported.has(key(it));
     const place = matchPlace(it);
     const field = (label: string, input: HTMLElement, opts: { full?: boolean; hint?: string } = {}) =>
       el('label', { class: `ev-field${opts.full ? ' full' : ''}` }, label, input, opts.hint && el('span', { class: 'hint', textContent: opts.hint }));
@@ -185,14 +215,14 @@ import AdminShell from '../../layouts/AdminShell.astro';
         const p = places.find((x) => x.name === arcPlace.value.trim()) ?? null;
         const photo_path = it.image ? await copyImage(it) : null;
         const { error } = await sb.rpc('admin_import_event', { p_data: {
-          source: source.id, source_id: it.id, organizer_name: source.organizer,
+          source: it.src.id, source_id: it.id, organizer_name: it.src.organizer,
           title: title.value.trim(), event_date: start.value, end_date: end.value && end.value !== start.value ? end.value : null,
           place: placeText.value.trim() || p?.name || '', dz_name: p?.kind === 'dz' ? p.name : null,
           lat: p?.lat ?? null, lng: p?.lng ?? null, photo_path,
           description: desc.value.trim(), discs: [...picked], website: link.value.trim() || null,
         } });
         if (error) throw error;
-        imported.add(it.id);
+        imported.add(key(it));
         toast(`Imported: ${title.value.trim()}`);
         render();
       } catch (e: any) {
@@ -210,6 +240,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
       el('div', { class: 'ev-body' },
         el('div', { class: 'ev-meta' },
           el('span', { textContent: it.end ? `${fmt(it.start)} – ${fmt(it.end)}` : fmt(it.start) }),
+          selected.length > 1 && el('span', { class: 'ev-tag', textContent: it.src.label }),
           it.type && el('span', { class: 'ev-tag', textContent: it.type }),
           it.locName && el('span', { textContent: `📍 ${it.locName}` }),
           done && el('span', { class: 'ev-tag ok', textContent: 'In Arc' }),
@@ -224,7 +255,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
           field('Disciplines', discs, { full: true }),
         ),
         el('div', { class: 'ev-actions' },
-          el('a', { href: source.page, target: '_blank', rel: 'noopener', textContent: 'Open source calendar ↗' }),
+          el('a', { href: it.link || it.src.page, target: '_blank', rel: 'noopener', textContent: `Open on ${it.src.label} ↗` }),
           btn,
         ),
       ),
@@ -240,29 +271,33 @@ import AdminShell from '../../layouts/AdminShell.astro';
       const blob = await res.blob();
       const ext = blob.type === 'image/png' ? 'png' : blob.type === 'image/webp' ? 'webp' : 'jpg';
       const { data: { user } } = await sb.auth.getUser();
-      const path = `${user!.id}/import-${source.id}-${it.id}.${ext}`;
+      const path = `${user!.id}/import-${it.src.id}-${it.id}.${ext}`;
       const { error } = await sb.storage.from('event-photos').upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: true });
       return error ? null : path;
     } catch { return null; }
   }
 
   async function load() {
-    q<HTMLElement>('[data-list]').replaceChildren(el('p', { class: 'note', textContent: 'Loading the calendar…' }));
+    const reading = selected.length > 1 ? `Reading ${selected.length} sources… (the pages take a few seconds each)` : `Reading ${selected[0].label}…`;
+    q<HTMLElement>('[data-list]').replaceChildren(el('p', { class: 'note', textContent: reading }));
+    q('[data-count]').textContent = '';
     try {
       const [fetched, dz, tu, done] = await Promise.all([
-        fetchSource(source),
+        Promise.allSettled(selected.map(fetchSource)),
         sb.from('dropzones').select('name, lat, lng, website'),
         sb.from('tunnels').select('name, lat, lng, website'),
-        sb.from('events').select('source_id').eq('source', source.id),
+        sb.from('events').select('source, source_id').in('source', selected.map((s) => s.id)),
       ]);
       const err = dz.error || tu.error || done.error;
       if (err) throw err;
-      items = fetched;
+      // One source failing (site down) doesn't hide the others.
+      failed = fetched.flatMap((r, i) => (r.status === 'rejected' ? [`Couldn't read ${selected[i].label}: ${r.reason?.message ?? r.reason}`] : []));
+      items = fetched.flatMap((r) => (r.status === 'fulfilled' ? r.value : [])).sort((a, b) => a.start.localeCompare(b.start));
       places = [
         ...(dz.data ?? []).map((p: any) => ({ ...p, kind: 'dz' as const })),
         ...(tu.data ?? []).map((p: any) => ({ ...p, kind: 'tunnel' as const })),
       ];
-      imported = new Set((done.data ?? []).map((r: any) => r.source_id));
+      imported = new Set((done.data ?? []).map((r: any) => `${r.source}|${r.source_id}`));
       q('#places').replaceChildren(...places.map((p) => el('option', { value: p.name, label: p.kind === 'tunnel' ? 'Tunnel' : 'Dropzone' })));
       render();
     } catch (e: any) {
@@ -272,8 +307,14 @@ import AdminShell from '../../layouts/AdminShell.astro';
   }
 
   const select = q<HTMLSelectElement>('[data-source]');
-  select.replaceChildren(...SOURCES.map((s) => el('option', { value: s.id, textContent: s.label })));
-  select.addEventListener('change', () => { source = SOURCES.find((s) => s.id === select.value)!; load(); });
+  select.replaceChildren(
+    el('option', { value: ALL, textContent: `All sources (${SOURCES.length})` }),
+    ...SOURCES.map((s) => el('option', { value: s.id, textContent: s.label })),
+  );
+  select.addEventListener('change', () => {
+    selected = select.value === ALL ? SOURCES : SOURCES.filter((s) => s.id === select.value);
+    load();
+  });
   q('[data-hide-assoc]').addEventListener('change', render);
   q('[data-hide-done]').addEventListener('change', render);
 
