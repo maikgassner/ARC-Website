@@ -298,11 +298,29 @@ import AdminShell from '../../layouts/AdminShell.astro';
       .sort((a, b) => a.start.localeCompare(b.start));
   }
 
+  // Already in Arc under another id (made by hand, or the source's title
+  // changed since): the dates overlap and the titles share most words.
+  const words = (t: string) => new Set(t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/\b(20\d\d|the|and|der|die|das|und|de|la|le|el|by|with|at|in)\b/g, ' ')
+    .split(/[^a-z0-9]+/).filter((w) => w.length > 1));
+  function sameInArc(it: Item): boolean {
+    const mine = words(it.title);
+    if (!mine.size || !it.start) return false;
+    const itEnd = it.end ?? it.start;
+    return events.some((e) => {
+      const eEnd = e.end_date ?? e.event_date;
+      if (!e.event_date || e.event_date > itEnd || eEnd < it.start) return false;
+      const theirs = words(e.title ?? '');
+      const shared = [...mine].filter((w) => theirs.has(w)).length;
+      return shared > 0 && shared / Math.min(mine.size, theirs.size || 1) >= 0.6;
+    });
+  }
+
   function render() {
     const hideAssoc = q<HTMLInputElement>('[data-hide-assoc]').checked;
     // Events already in Arc don't show here: they're in the list (edit them there).
     const relevant = items.filter((it) => !(hideAssoc && it.src.skipTypes?.includes(it.type)));
-    const shown = relevant.filter((it) => !imported.has(key(it)));
+    const shown = relevant.filter((it) => !imported.has(key(it)) && !sameInArc(it));
     const inArc = relevant.length - shown.length;
     q('[data-count]').textContent = `${shown.length} to import${inArc ? ` · ${inArc} already in Arc` : ''}`;
     const list = q<HTMLElement>('[data-list]');
@@ -672,7 +690,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   // The sources are only read here (the page sources cost a Claude call each).
   q('[data-import]').addEventListener('click', () => {
     show('import');
-    if (!importLoaded) { importLoaded = true; load(); }
+    if (!importLoaded) { importLoaded = true; load(); } else render();
   });
   document.querySelectorAll<HTMLElement>('[data-back]').forEach((b) => b.addEventListener('click', () => { showList(); loadEvents(); }));
   q('[data-ev-search]').addEventListener('input', renderEvents);
