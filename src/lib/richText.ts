@@ -40,7 +40,23 @@ export function richTextEditor(value: string, placeholder: string, onChange: (v:
     };
 
     // Wrap the selection in **…** (or insert a placeholder to type over).
+    // Clicked again inside **bold** or a [link](url): take the format off.
+    const unwrap = (re: RegExp, inner: (m: RegExpExecArray) => string) => {
+      const { selectionStart: a, selectionEnd: b, value } = ta;
+      for (const m of value.matchAll(re)) {
+        const start = m.index!, end = start + m[0].length;
+        if (start <= a && b <= end) {
+          const text = inner(m as RegExpExecArray);
+          ta.setRangeText(text, start, end, 'select');
+          ta.setSelectionRange(start, start + text.length);
+          ta.focus(); commit();
+          return true;
+        }
+      }
+      return false;
+    };
     const bold = () => {
+      if (unwrap(/\*\*([^*]+)\*\*/g, (m) => m[1])) return;
       const { selectionStart: a, selectionEnd: b, value } = ta;
       const sel = value.slice(a, b) || 'bold text';
       ta.setRangeText(`**${sel}**`, a, b, 'end');
@@ -61,6 +77,7 @@ export function richTextEditor(value: string, placeholder: string, onChange: (v:
     };
     // Turn the selection into [text](url); without a selection insert a placeholder text.
     const link = () => {
+      if (unwrap(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m) => m[1])) return;
       const { selectionStart: a, selectionEnd: b, value } = ta;
       const raw = prompt('Link address (https://…)');
       if (!raw?.trim()) return;
