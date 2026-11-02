@@ -1,0 +1,281 @@
+---
+// Import events from outside calendars into Arc (ARC/supabase/migrations/
+// 0126_event_import.sql). First source: Swiss Skydive's Eventskalendar, an
+// Elfsight widget whose settings JSON is public. Each upcoming event is
+// matched to an Arc dropzone / tunnel, checked here and imported one by one
+// (admin_import_event); its cover image is copied into event-photos. An event
+// already imported (events.source + source_id) shows as "In Arc".
+import AdminShell from '../../layouts/AdminShell.astro';
+---
+<AdminShell title="Event import" sub="Upcoming events from other calendars: check, link to a place, import." active="event-import">
+  <div class="toolbar">
+    <select data-source aria-label="Source"></select>
+    <label class="check"><input type="checkbox" data-hide-assoc checked> Hide association meetings</label>
+    <label class="check"><input type="checkbox" data-hide-done> Hide imported</label>
+    <span class="count" data-count></span>
+  </div>
+  <datalist id="places"></datalist>
+  <div class="list" data-list></div>
+</AdminShell>
+
+<style>
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; margin-top: 16px; }
+  .toolbar select { padding: 9px 12px; border-radius: 12px; border: 1.5px solid var(--ink-100); font: inherit; background: var(--surface); }
+  .check { display: flex; align-items: center; gap: 6px; font-size: .9rem; font-weight: 600; color: var(--fg-2); }
+  .count { margin-left: auto; color: var(--fg-3); font-size: .85rem; font-weight: 600; }
+  .list { display: grid; gap: 14px; margin-top: 18px; }
+  :global(.ev) { display: grid; grid-template-columns: 132px 1fr; gap: 18px; padding: 18px; border-radius: 18px; background: var(--surface); box-shadow: var(--shadow); }
+  :global(.ev.done) { opacity: .6; }
+  :global(.ev-img) { width: 132px; height: 132px; border-radius: 14px; object-fit: cover; background: var(--ink-100); cursor: zoom-in; }
+  :global(.ev-noimg) { width: 132px; height: 132px; border-radius: 14px; background: var(--ink-100); display: grid; place-items: center; color: var(--fg-3); font-size: .8rem; }
+  :global(.ev-body) { display: grid; gap: 10px; min-width: 0; }
+  :global(.ev-meta) { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: .82rem; font-weight: 700; color: var(--fg-3); }
+  :global(.ev-tag) { padding: 2px 8px; border-radius: 999px; background: var(--ink-100); color: var(--fg-2); }
+  :global(.ev-tag.ok) { background: #E6F4EA; color: #1E6B34; }
+  :global(.ev-grid) { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  :global(.ev-field) { display: grid; gap: 4px; font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--fg-3); }
+  :global(.ev-field.full) { grid-column: 1 / -1; }
+  :global(.ev-field input), :global(.ev-field textarea) { font: inherit; font-size: .92rem; text-transform: none; letter-spacing: 0; color: var(--fg); padding: 8px 10px; border-radius: 10px; border: 1.5px solid var(--ink-100); background: var(--surface); }
+  :global(.ev-field textarea) { min-height: 84px; resize: vertical; }
+  :global(.ev-field .hint) { font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--fg-3); }
+  :global(.ev-discs) { display: flex; flex-wrap: wrap; gap: 6px; }
+  :global(.ev-disc) { padding: 5px 11px; border-radius: 999px; border: 1.5px solid var(--ink-100); background: var(--surface); font: inherit; font-size: .82rem; font-weight: 700; color: var(--fg-2); cursor: pointer; }
+  :global(.ev-disc[aria-pressed="true"]) { background: var(--action, #C64E2C); border-color: transparent; color: #fff; }
+  :global(.ev-actions) { display: flex; gap: 10px; align-items: center; justify-content: flex-end; }
+  :global(.ev-actions a) { margin-right: auto; font-size: .85rem; font-weight: 700; }
+  @media (max-width: 760px) {
+    :global(.ev) { grid-template-columns: 1fr; }
+    :global(.ev-grid) { grid-template-columns: 1fr; }
+  }
+</style>
+
+<script>
+  import type { SupabaseClient } from '@supabase/supabase-js';
+  import { el, initAdmin, showError, toast, openLightbox } from '../../lib/admin';
+
+  // Elfsight "Event Calendar" widgets: their settings (events, types,
+  // locations) come from the same public endpoint the widget itself uses.
+  type Source = { id: string; label: string; organizer: string; page: string; widget: string; skipTypes: string[] };
+  const SOURCES: Source[] = [
+    { id: 'swissskydive', label: 'Swiss Skydive · Eventskalendar', organizer: 'Swiss Skydive',
+      page: 'https://home.swissskydive.org/eventskalendar', widget: '395c7aa7-b567-4849-8b41-3911faa0b3a3', skipTypes: ['Association'] },
+  ];
+  const DISCS = ['Freefly', 'Belly', 'Wingsuit', 'Angle', 'Speed', 'CRW', 'Canopy', 'Tunnel'];
+
+  type Place = { name: string; kind: 'dz' | 'tunnel'; lat: number | null; lng: number | null; website: string | null };
+  type Item = {
+    id: string; title: string; start: string; end: string | null; type: string;
+    locName: string; locAddress: string; locWebsite: string;
+    description: string; image: string | null; link: string | null;
+  };
+
+  let sb: SupabaseClient;
+  let source = SOURCES[0];
+  let items: Item[] = [];
+  let places: Place[] = [];
+  let imported = new Set<string>();
+  const q = <T extends Element>(s: string) => document.querySelector<T>(s)!;
+
+  // Accents, case and filler words don't count when comparing names.
+  const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/\b(skydive|skydiving|paraclub|para|centro|dropzone|indoor|flugplatz|fallschirm\w*)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ').trim();
+  const host = (u: string | null | undefined) => {
+    if (!u) return '';
+    try { return new URL(u.startsWith('http') ? u : `https://${u}`).hostname.replace(/^www\./, ''); } catch { return ''; }
+  };
+  // Website domain first (most reliable), then the name, then the town in the address.
+  function matchPlace(it: Item): Place | null {
+    const h = host(it.locWebsite);
+    if (h) { const byHost = places.find((p) => host(p.website) === h); if (byHost) return byHost; }
+    const n = norm(it.locName);
+    if (n) {
+      const byName = places.find((p) => { const pn = norm(p.name); return !!pn && (pn === n || pn.includes(n) || n.includes(pn)); });
+      if (byName) return byName;
+    }
+    const town = norm(it.locAddress.replace(/^.*\b\d{4}\s+/, ''));
+    return town ? places.find((p) => norm(p.name).split(' ').includes(town)) ?? null : null;
+  }
+  function guessDiscs(it: Item, place: Place | null): string[] {
+    const t = `${it.title} ${it.description}`.toLowerCase();
+    const out = new Set<string>();
+    if (place?.kind === 'tunnel' || /\bindoor\b|tunnel/.test(t)) out.add('Tunnel');
+    if (/freefly/.test(t)) out.add('Freefly');
+    if (/\bbelly\b|\bfs\b|formation/.test(t)) out.add('Belly');
+    if (/wingsuit|\bws\b/.test(t)) out.add('Wingsuit');
+    if (/\bangle\b|tracking/.test(t)) out.add('Angle');
+    if (/\bspeed\b/.test(t)) out.add('Speed');
+    if (/\bcrw\b|canopy formation/.test(t)) out.add('CRW');
+    if (/accuracy|swoop|canopy piloting/.test(t)) out.add('Canopy');
+    return DISCS.filter((d) => out.has(d));
+  }
+  // HTML description → plain text with paragraph breaks.
+  function htmlToText(html: string) {
+    const doc = new DOMParser().parseFromString(html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p|li)>/gi, '\n'), 'text/html');
+    return (doc.body.textContent ?? '').replace(/\n{3,}/g, '\n\n').trim();
+  }
+  const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const fmt = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  async function fetchSource(src: Source): Promise<Item[]> {
+    const url = `https://core.service.elfsight.com/p/boot/?page=${encodeURIComponent(src.page)}&w=${src.widget}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Calendar didn't load (${res.status})`);
+    const json = await res.json();
+    const st = json?.data?.widgets?.[src.widget]?.data?.settings;
+    if (!st?.events) throw new Error('Calendar has no events (the widget changed?)');
+    const types = new Map<string, string>((st.eventTypes ?? []).map((t: any) => [t.id, t.name]));
+    const locs = new Map<string, any>((st.locations ?? []).map((l: any) => [l.id, l]));
+    const from = today();
+    return (st.events as any[])
+      .map((e): Item => {
+        const loc = locs.get(e.location?.[0]) ?? {};
+        const link = (e.actions ?? []).find((a: any) => a.link?.value)?.link.value ?? null;
+        return {
+          id: String(e.id), title: String(e.name ?? '').trim(),
+          start: e.start?.date, end: e.end?.date && e.end.date !== e.start?.date ? e.end.date : null,
+          type: types.get(e.eventType?.[0]) ?? '',
+          locName: loc.name ?? '', locAddress: loc.address ?? '', locWebsite: loc.website ?? '',
+          description: htmlToText(e.description ?? ''),
+          image: e.coverImage?.url ?? e.images?.[0]?.url ?? null,
+          link,
+        };
+      })
+      .filter((e) => e.start && (e.end ?? e.start) >= from)
+      .sort((a, b) => a.start.localeCompare(b.start));
+  }
+
+  function render() {
+    const hideAssoc = q<HTMLInputElement>('[data-hide-assoc]').checked;
+    const hideDone = q<HTMLInputElement>('[data-hide-done]').checked;
+    const shown = items.filter((it) => !(hideAssoc && source.skipTypes.includes(it.type)) && !(hideDone && imported.has(it.id)));
+    const open = shown.filter((it) => !imported.has(it.id)).length;
+    q('[data-count]').textContent = `${shown.length} upcoming · ${open} to import`;
+    const list = q<HTMLElement>('[data-list]');
+    list.replaceChildren(...(shown.length ? shown.map(card) : [el('p', { class: 'note', textContent: 'No upcoming events in this calendar.' })]));
+  }
+
+  function card(it: Item) {
+    const done = imported.has(it.id);
+    const place = matchPlace(it);
+    const field = (label: string, input: HTMLElement, opts: { full?: boolean; hint?: string } = {}) =>
+      el('label', { class: `ev-field${opts.full ? ' full' : ''}` }, label, input, opts.hint && el('span', { class: 'hint', textContent: opts.hint }));
+
+    const title = el('input', { value: it.title });
+    const start = el('input', { type: 'date', value: it.start });
+    const end = el('input', { type: 'date', value: it.end ?? '' });
+    const arcPlace = el('input', { value: place?.name ?? '', placeholder: 'No Arc place (event shows the text below)' });
+    arcPlace.setAttribute('list', 'places');
+    const placeText = el('input', { value: place?.name ?? [it.locName, it.locAddress].filter(Boolean).join(', ') });
+    arcPlace.addEventListener('change', () => { if (places.some((p) => p.name === arcPlace.value)) placeText.value = arcPlace.value; });
+    const link = el('input', { value: it.link ?? '', placeholder: 'https://' });
+    const desc = el('textarea', { value: it.description });
+    const picked = new Set(guessDiscs(it, place));
+    const discs = el('div', { class: 'ev-discs' }, ...DISCS.map((d) => {
+      const b = el('button', { type: 'button', class: 'ev-disc', textContent: d, 'aria-pressed': String(picked.has(d)) });
+      b.addEventListener('click', () => { picked.has(d) ? picked.delete(d) : picked.add(d); b.setAttribute('aria-pressed', String(picked.has(d))); });
+      return b;
+    }));
+
+    const btn = el('button', { type: 'button', class: 'primary-btn small', textContent: done ? 'In Arc' : 'Import', disabled: done });
+    btn.addEventListener('click', async () => {
+      if (!title.value.trim() || !start.value) return toast('Title and start date are needed');
+      btn.disabled = true; btn.textContent = 'Importing…';
+      try {
+        const p = places.find((x) => x.name === arcPlace.value.trim()) ?? null;
+        const photo_path = it.image ? await copyImage(it) : null;
+        const { error } = await sb.rpc('admin_import_event', { p_data: {
+          source: source.id, source_id: it.id, organizer_name: source.organizer,
+          title: title.value.trim(), event_date: start.value, end_date: end.value && end.value !== start.value ? end.value : null,
+          place: placeText.value.trim() || p?.name || '', dz_name: p?.kind === 'dz' ? p.name : null,
+          lat: p?.lat ?? null, lng: p?.lng ?? null, photo_path,
+          description: desc.value.trim(), discs: [...picked], website: link.value.trim() || null,
+        } });
+        if (error) throw error;
+        imported.add(it.id);
+        toast(`Imported: ${title.value.trim()}`);
+        render();
+      } catch (e: any) {
+        btn.disabled = false; btn.textContent = 'Import';
+        showError(e?.message ?? String(e));
+      }
+    });
+
+    const img = it.image
+      ? el('img', { class: 'ev-img', src: it.image, alt: '', loading: 'lazy', onclick: () => openLightbox(it.image!) })
+      : el('div', { class: 'ev-noimg', textContent: 'No image' });
+
+    return el('article', { class: `ev${done ? ' done' : ''}` },
+      img,
+      el('div', { class: 'ev-body' },
+        el('div', { class: 'ev-meta' },
+          el('span', { textContent: it.end ? `${fmt(it.start)} – ${fmt(it.end)}` : fmt(it.start) }),
+          it.type && el('span', { class: 'ev-tag', textContent: it.type }),
+          it.locName && el('span', { textContent: `📍 ${it.locName}` }),
+          done && el('span', { class: 'ev-tag ok', textContent: 'In Arc' }),
+        ),
+        el('div', { class: 'ev-grid' },
+          field('Title', title, { full: true }),
+          field('Start', start), field('End', end, { hint: 'Empty for a one-day event' }),
+          field('Arc place', arcPlace, { hint: place ? 'Matched automatically, check it' : 'No match: pick one or leave empty' }),
+          field('Place text', placeText),
+          field('Link', link, { full: true }),
+          field('Description', desc, { full: true }),
+          field('Disciplines', discs, { full: true }),
+        ),
+        el('div', { class: 'ev-actions' },
+          el('a', { href: source.page, target: '_blank', rel: 'noopener', textContent: 'Open source calendar ↗' }),
+          btn,
+        ),
+      ),
+    );
+  }
+
+  // The cover image goes into event-photos under the admin's own folder,
+  // like a photo picked in the app.
+  async function copyImage(it: Item): Promise<string | null> {
+    try {
+      const res = await fetch(it.image!);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      const ext = blob.type === 'image/png' ? 'png' : blob.type === 'image/webp' ? 'webp' : 'jpg';
+      const { data: { user } } = await sb.auth.getUser();
+      const path = `${user!.id}/import-${source.id}-${it.id}.${ext}`;
+      const { error } = await sb.storage.from('event-photos').upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: true });
+      return error ? null : path;
+    } catch { return null; }
+  }
+
+  async function load() {
+    q<HTMLElement>('[data-list]').replaceChildren(el('p', { class: 'note', textContent: 'Loading the calendar…' }));
+    try {
+      const [fetched, dz, tu, done] = await Promise.all([
+        fetchSource(source),
+        sb.from('dropzones').select('name, lat, lng, website'),
+        sb.from('tunnels').select('name, lat, lng, website'),
+        sb.from('events').select('source_id').eq('source', source.id),
+      ]);
+      const err = dz.error || tu.error || done.error;
+      if (err) throw err;
+      items = fetched;
+      places = [
+        ...(dz.data ?? []).map((p: any) => ({ ...p, kind: 'dz' as const })),
+        ...(tu.data ?? []).map((p: any) => ({ ...p, kind: 'tunnel' as const })),
+      ];
+      imported = new Set((done.data ?? []).map((r: any) => r.source_id));
+      q('#places').replaceChildren(...places.map((p) => el('option', { value: p.name, label: p.kind === 'tunnel' ? 'Tunnel' : 'Dropzone' })));
+      render();
+    } catch (e: any) {
+      q<HTMLElement>('[data-list]').replaceChildren();
+      showError(e?.message ?? String(e));
+    }
+  }
+
+  const select = q<HTMLSelectElement>('[data-source]');
+  select.replaceChildren(...SOURCES.map((s) => el('option', { value: s.id, textContent: s.label })));
+  select.addEventListener('change', () => { source = SOURCES.find((s) => s.id === select.value)!; load(); });
+  q('[data-hide-assoc]').addEventListener('change', render);
+  q('[data-hide-done]').addEventListener('change', render);
+
+  initAdmin(async (client) => { sb = client; await load(); });
+</script>
