@@ -37,6 +37,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   :global(.ev.draft) { outline: 2px dashed var(--ink-100); }
   :global(.ev-field input.not-on-arc) { border-color: #E8A33D; background: #FFF7E8; }
   :global(.ev-field .hint .warn) { color: #8A5A00; }
+  :global(.ev-use) { font: inherit; font-weight: 700; color: var(--action, #C64E2C); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
   :global(.ev-field .hint .warn a) { color: inherit; text-decoration: underline; }
   :global(.ev-body) { display: grid; gap: 10px; min-width: 0; }
   :global(.ev-meta) { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: .82rem; font-weight: 700; color: var(--fg-3); }
@@ -62,6 +63,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
 <script>
   import type { SupabaseClient } from '@supabase/supabase-js';
   import { el, initAdmin, showError, toast, openLightbox } from '../../lib/admin';
+  import { searchAddressNow } from '../../lib/maps';
 
   // elfsight: an Elfsight "Event Calendar" widget — its settings (events,
   //   types, locations) come from the public endpoint the widget itself uses.
@@ -95,9 +97,9 @@ import AdminShell from '../../layouts/AdminShell.astro';
   type Item = {
     src: Source; id: string; title: string; start: string; end: string | null; type: string;
     locName: string; locAddress: string; locWebsite: string;
-    description: string; image: string | null; link: string | null;
+    description: string; image: string | null; link: string | null; price?: string;
     // Set while editing a card, so a re-render (filters, other imports) keeps it.
-    file?: File; organizer?: string; arcPlace?: string; discs?: string[]; category?: string;
+    file?: File; organizer?: string; arcPlace?: string; address?: string; geo?: { lat: number; lng: number }; discs?: string[]; category?: string;
   };
 
   let sb: SupabaseClient;
@@ -130,6 +132,36 @@ import AdminShell from '../../layouts/AdminShell.astro';
     }
     const town = norm(it.locAddress.replace(/^.*\b\d{4}\s+/, ''));
     return town ? places.find((p) => norm(p.name).split(' ').includes(town)) ?? null : null;
+  }
+  // Address → pin (Nominatim: one lookup at a time, ~1/s, each address once).
+  const geoCache = new Map<string, Promise<{ lat: number; lng: number } | null>>();
+  let geoQueue: Promise<unknown> = Promise.resolve();
+  function geocode(address: string): Promise<{ lat: number; lng: number } | null> {
+    const k = address.trim().toLowerCase();
+    if (!k) return Promise.resolve(null);
+    if (!geoCache.has(k)) {
+      const run = geoQueue.then(async () => {
+        const [g] = await searchAddressNow(address).catch(() => []);
+        await new Promise((r) => setTimeout(r, 1100));
+        return g ? { lat: g.lat, lng: g.lng } : null;
+      });
+      geoQueue = run.catch(() => {});
+      geoCache.set(k, run);
+    }
+    return geoCache.get(k)!;
+  }
+  function kmBetween(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+    const r = Math.PI / 180, x = Math.sin(((b.lat - a.lat) * r) / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(((b.lng - a.lng) * r) / 2) ** 2;
+    return 12742 * Math.asin(Math.sqrt(x));
+  }
+  function nearestPlace(at: { lat: number; lng: number }): { place: Place; km: number } | null {
+    let best: { place: Place; km: number } | null = null;
+    for (const p of places) {
+      if (p.lat == null || p.lng == null) continue;
+      const km = kmBetween(at, { lat: p.lat, lng: p.lng });
+      if (!best || km < best.km) best = { place: p, km };
+    }
+    return best;
   }
   function guessDiscs(it: Item, place: Place | null): string[] {
     const t = `${it.title} ${it.description}`.toLowerCase();
@@ -167,7 +199,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
         src, id: `${slug(e.title)}-${e.start}`, title: String(e.title ?? '').trim(),
         start: e.start, end: e.end && e.end !== e.start ? e.end : null, type: '',
         locName: e.place ?? '', locAddress: '', locWebsite: '',
-        description: e.description ?? '', image: null, link: e.link ?? null,
+        description: e.description ?? '', image: null, link: e.link ?? null, price: e.price ?? undefined,
       })).sort((a, b) => a.start.localeCompare(b.start));
     }
     const url = `https://core.service.elfsight.com/p/boot/?page=${encodeURIComponent(src.page)}&w=${src.widget}`;
@@ -217,27 +249,59 @@ import AdminShell from '../../layouts/AdminShell.astro';
     const title = el('input', { value: it.title, placeholder: 'e.g. Freefly Boogie 2027' });
     const start = el('input', { type: 'date', value: it.start });
     const end = el('input', { type: 'date', value: it.end ?? '' });
-    // One place field: an Arc dropzone / tunnel from the list, or — marked —
-    // free text (then either keep it, or add the place in Places first).
-    const placeIn = el('input', { value: it.arcPlace ?? place?.name ?? [it.locName, it.locAddress].filter(Boolean).join(', '), placeholder: 'Pick a dropzone or tunnel' });
+    // Dropzone: an Arc dropzone / tunnel from the list, or — marked — free
+    // text (then either keep it, or add the place in Places first).
+    // Address: optional, shown next to the dropzone; its pin suggests the
+    // nearest place on Arc and puts the event on the map.
+    const placeIn = el('input', { value: it.arcPlace ?? place?.name ?? (it.locAddress ? it.locName : ''), placeholder: 'Pick a dropzone or tunnel' });
     placeIn.setAttribute('list', 'places');
+    const addressIn = el('input', { value: it.address ?? (place ? it.locAddress : it.locAddress || it.locName), placeholder: 'Optional, e.g. Flugplatz 1, 6845 Hohenems' });
     const placeHint = el('span', { class: 'hint' });
+    const suggestion = el('span', { class: 'hint' });
     const paintPlace = () => {
       const onArc = places.find((p) => p.name === placeIn.value.trim());
       const empty = !placeIn.value.trim();
       placeIn.classList.toggle('not-on-arc', !onArc && !empty);
       placeHint.replaceChildren(
         onArc ? `✓ On Arc (${onArc.kind === 'tunnel' ? 'tunnel' : 'dropzone'}), the event links to it`
-        : empty ? 'No place'
+        : empty ? (addressIn.value.trim() ? 'None: the event shows the address only' : 'No place')
         : el('span', { class: 'warn' }, 'Not on Arc: saved as free text, no link. ',
             el('a', { href: '/admin/places', target: '_blank', rel: 'noopener', textContent: 'Add it in Places ↗' }),
             ' then pick it here.'),
       );
     };
+    // Nearest place on Arc to the address, one click to take it.
+    let geoFor = '';
+    const suggest = async () => {
+      const address = addressIn.value.trim();
+      geoFor = address;
+      if (!address) { it.geo = undefined; suggestion.replaceChildren(); return; }
+      suggestion.replaceChildren('Looking up the address…');
+      const at = await geocode(address);
+      if (geoFor !== address) return;
+      it.geo = at ?? undefined;
+      const near = at && nearestPlace(at);
+      suggestion.replaceChildren(
+        !at ? el('span', { class: 'warn' }, 'Address not found on the map: saved as text, no pin.')
+        : !near ? ''
+        : near.place.name === placeIn.value.trim() ? `✓ ${near.km < 1 ? 'Under 1' : Math.round(near.km)} km from the address`
+        : el('span', {}, `Nearest on Arc: ${near.place.name} (${Math.round(near.km)} km) `,
+            el('button', { type: 'button', class: 'ev-use', textContent: 'Use it', onclick: () => {
+              placeIn.value = near.place.name; it.arcPlace = placeIn.value; paintPlace(); suggest();
+            } })),
+      );
+    };
     paintPlace();
+    suggest();
     placeIn.addEventListener('input', paintPlace);
+    let addressTimer = 0;
+    addressIn.addEventListener('input', () => {
+      it.address = addressIn.value; paintPlace();
+      clearTimeout(addressTimer); addressTimer = window.setTimeout(suggest, 800);
+    });
     const organizer = el('input', { value: it.organizer ?? it.src.organizer, placeholder: 'Who runs it, e.g. Skydive Empuriabrava' });
     const link = el('input', { value: it.link ?? '', placeholder: 'https://' });
+    const price = el('input', { value: it.price ?? '', placeholder: 'e.g. EUR 350 incl. 10 jumps, or Free', maxLength: 60 });
     const desc = el('textarea', { value: it.description });
     const picked = new Set(it.discs ?? guessDiscs(it, place));
     const category = el('select', {}, ...CATEGORIES.map(([v, l]) => el('option', { value: v, textContent: l })));
@@ -256,6 +320,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     placeIn.addEventListener('input', () => { it.arcPlace = placeIn.value; });
     organizer.addEventListener('input', () => { it.organizer = organizer.value; });
     link.addEventListener('input', () => { it.link = link.value || null; });
+    price.addEventListener('input', () => { it.price = price.value; });
     desc.addEventListener('input', () => { it.description = desc.value; });
 
     const isDraft = it.src.kind === 'manual';
@@ -263,17 +328,24 @@ import AdminShell from '../../layouts/AdminShell.astro';
     btn.addEventListener('click', async () => {
       if (!title.value.trim() || !start.value) return toast('Title and start date are needed');
       if (!organizer.value.trim()) return toast('Who organises it?');
+      if (!placeIn.value.trim() && !addressIn.value.trim()) return toast('Where is it? A dropzone or an address');
       btn.disabled = true; btn.textContent = 'Importing…';
       try {
         const p = places.find((x) => x.name === placeIn.value.trim()) ?? null;
+        const dzText = p?.name ?? placeIn.value.trim();
+        const address = addressIn.value.trim();
+        const pin = address ? await geocode(address) : null;
         const photo_path = it.file || it.image ? await copyImage(it) : null;
         const { error } = await sb.rpc('admin_import_event', { p_data: {
           source: it.src.id, source_id: it.id, organizer_name: organizer.value.trim(),
           title: title.value.trim(), event_date: start.value, end_date: end.value && end.value !== start.value ? end.value : null,
-          place: p?.name ?? placeIn.value.trim(), dz_name: p?.kind === 'dz' ? p.name : null,
-          lat: p?.lat ?? null, lng: p?.lng ?? null, photo_path,
+          // Arc shows `place`: the dropzone, then the address (if any).
+          place: address.toLowerCase().startsWith(dzText.toLowerCase()) ? address : [dzText, address].filter(Boolean).join(', '),
+          dz_name: p?.kind === 'dz' ? p.name : null,
+          lat: pin?.lat ?? p?.lat ?? null, lng: pin?.lng ?? p?.lng ?? null, photo_path,
           description: desc.value.trim(), discs: [...picked], website: link.value.trim() || null,
           category: category.value || null,
+          price: price.value.trim() || null,
         } });
         if (error) throw error;
         imported.add(key(it));
@@ -318,9 +390,11 @@ import AdminShell from '../../layouts/AdminShell.astro';
         el('div', { class: 'ev-grid' },
           field('Title', title, { full: true }),
           field('Start', start), field('End', end, { hint: 'Empty for a one-day event' }),
-          el('label', { class: 'ev-field full' }, 'Place', placeIn, placeHint),
+          el('label', { class: 'ev-field full' }, 'Dropzone', placeIn, placeHint),
+          el('label', { class: 'ev-field full' }, 'Address', addressIn, suggestion),
           field('Organizer', organizer, { full: true, hint: 'Shown as the event\'s organiser in Arc' }),
           field('Link', link, { full: true }),
+          field('Entry price', price, { full: true, hint: 'Optional: what signing up costs, as the organiser writes it' }),
           field('Description', desc, { full: true }),
           field('Type', category, { hint: 'Optional' }),
           field('Disciplines', discs, { full: true }),
