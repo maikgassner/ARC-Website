@@ -158,24 +158,6 @@ import AdminShell from '../../layouts/AdminShell.astro';
   .ghost-btn.danger:hover { border-color: var(--no); color: var(--no); }
   .savebar-hint { margin-right: auto; padding-left: 10px; font-size: .88rem; color: var(--fg-3); }
 
-  /* ---------- Rich text (description) ---------- */
-  :global(.rt-toolbar) { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  :global(.rt-btn) {
-    min-width: 38px; height: 34px; padding: 0 12px; border-radius: 10px; cursor: pointer;
-    border: 1px solid var(--border); background: var(--surface); color: var(--fg); font: 600 .88rem var(--font);
-  }
-  :global(.rt-btn:hover) { border-color: var(--fg-3); }
-  :global(.rt-help) { font-size: .78rem; color: var(--fg-3); margin-left: 4px; }
-  :global(.rt-label) { font-size: .72rem !important; font-weight: 800 !important; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3) !important; margin-top: 4px; }
-  :global(.rt-preview) { padding: 14px 16px; border-radius: 12px; background: var(--bg); font-size: .92rem; line-height: 1.6; color: var(--fg-2); }
-  :global(.rt-preview p) { margin: 0 0 8px; white-space: pre-wrap; }
-  :global(.rt-preview ul) { margin: 0 0 8px; padding-left: 1.2em; }
-  :global(.rt-preview li::marker) { color: var(--action); }
-  :global(.rt-preview strong) { color: var(--fg); }
-  :global(.rt-preview a) { color: var(--accent-text); font-weight: 600; text-decoration: underline; }
-  :global(.rt-preview > :last-child) { margin-bottom: 0; }
-  :global(.rt-empty) { color: var(--fg-3); }
-
   /* ---------- Hours toggle ---------- */
   :global(.switch-row) { display: flex; align-items: center; gap: 12px; cursor: pointer; font-weight: 700; font-size: .92rem; color: var(--fg); }
   :global(.switch-row input) { position: absolute; opacity: 0; pointer-events: none; }
@@ -246,6 +228,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
 <script>
   import type { SupabaseClient } from '@supabase/supabase-js';
   import { el, add, photoUrl, openLightbox, toast, initAdmin, showError, toAvatar, PROD_ONLY, BUCKET, type Env } from '../../lib/admin';
+  import { richTextEditor } from '../../lib/richText';
   import { parseCoords, placeFromMapsUrl, isShortMapsLink, urlIn, cityOf, formatAddress, getJson, searchAddress, searchAddressNow, reverseGeocode, type Geo } from '../../lib/maps';
 
   type Kind = 'dz' | 'tunnel';
@@ -682,96 +665,10 @@ import AdminShell from '../../layouts/AdminShell.astro';
     return chipsEl(f);
   }
 
-  // Description: plain text with **bold**, [text](url) links and "- " bullet lines — the app's
-  // RichDescription (ARC/components/RichDescription.tsx) renders the same
-  // two markers. Toolbar buttons insert them; the preview mirrors the app.
+  // Description: **bold**, [text](url) links and "- " bullets (lib/richText.ts).
   function richTextEl(f: Field): HTMLElement {
-    const ta = el('textarea', { value: editing!.values[f.key] ?? '', placeholder: f.placeholder ?? '', rows: 8 });
-    const preview = el('div', { class: 'rt-preview' });
-    const commit = () => { setVal(f.key, ta.value); paintPreview(); };
-    const paintPreview = () => {
-      const blocks: HTMLElement[] = [];
-      let para: string[] = [];
-      let list: HTMLElement | null = null;
-      // Same tokens as the app: **bold**, [text](url), bare www./https:// links.
-      const TOKEN = /(\*\*[^*]+\*\*|\[[^\]]+\]\([^)\s]+\)|(?:https?:\/\/|www\.)[^\s<>()]+[^\s<>().,;:!?'"])/g;
-      const href = (u: string) => (/^https?:\/\//i.test(u) ? u : `https://${u}`);
-      const inline = (node: HTMLElement, text: string) => {
-        for (const part of text.split(TOKEN).filter(Boolean)) {
-          const md = part.match(/^\[([^\]]+)\]\(([^)\s]+)\)$/);
-          if (part.length > 4 && part.startsWith('**') && part.endsWith('**')) node.append(el('strong', { textContent: part.slice(2, -2) }));
-          else if (md || /^(https?:\/\/|www\.)/i.test(part)) {
-            const url = href(md ? md[2] : part);
-            node.append(el('a', { href: url, target: '_blank', rel: 'noopener', textContent: md ? md[1] : part.replace(/^https?:\/\//i, '') }));
-          } else node.append(part);
-        }
-        return node;
-      };
-      const flush = () => { if (para.length) { blocks.push(inline(el('p'), para.join('\n'))); para = []; } list = null; };
-      for (const line of ta.value.split('\n')) {
-        if (/^\s*[-•*]\s+/.test(line)) {
-          if (para.length) { blocks.push(inline(el('p'), para.join('\n'))); para = []; }
-          if (!list) { list = el('ul'); blocks.push(list); }
-          list.append(inline(el('li'), line.replace(/^\s*[-•*]\s+/, '')));
-        } else if (!line.trim()) flush();
-        else { list = null; para.push(line); }
-      }
-      flush();
-      preview.replaceChildren(...(blocks.length ? blocks : [el('p', { class: 'rt-empty', textContent: 'Preview appears here.' })]));
-    };
-
-    // Wrap the selection in **…** (or insert a placeholder to type over).
-    const bold = () => {
-      const { selectionStart: a, selectionEnd: b, value } = ta;
-      const sel = value.slice(a, b) || 'bold text';
-      ta.setRangeText(`**${sel}**`, a, b, 'end');
-      if (a === b) ta.setSelectionRange(a + 2, a + 2 + sel.length);
-      ta.focus(); commit();
-    };
-    // Toggle "- " on every line the selection touches.
-    const bullets = () => {
-      const { selectionStart: a, selectionEnd: b, value } = ta;
-      const start = value.lastIndexOf('\n', a - 1) + 1;
-      const endIdx = value.indexOf('\n', b);
-      const end = endIdx === -1 ? value.length : endIdx;
-      const lines = value.slice(start, end).split('\n');
-      const allOn = lines.every((l) => /^\s*[-•*]\s+/.test(l) || !l.trim());
-      const next = lines.map((l) => (!l.trim() ? l : allOn ? l.replace(/^\s*[-•*]\s+/, '') : `- ${l}`)).join('\n');
-      ta.setRangeText(next, start, end, 'select');
-      ta.focus(); commit();
-    };
-    // Turn the selection into [text](url); without a selection insert a placeholder text.
-    const link = () => {
-      const { selectionStart: a, selectionEnd: b, value } = ta;
-      const raw = prompt('Link address (https://…)');
-      if (!raw?.trim()) return;
-      const url = /^https?:\/\//i.test(raw.trim()) ? raw.trim() : `https://${raw.trim()}`;
-      const label = value.slice(a, b) || 'link text';
-      ta.setRangeText(`[${label}](${url})`, a, b, 'end');
-      if (a === b) ta.setSelectionRange(a + 1, a + 1 + label.length);
-      ta.focus(); commit();
-    };
-    ta.addEventListener('input', commit);
-    ta.addEventListener('keydown', (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') { e.preventDefault(); bold(); }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); link(); }
-      // Enter inside a bullet continues the list; Enter on an empty bullet ends it.
-      if (e.key === 'Enter' && !e.shiftKey) {
-        const { selectionStart: a, value } = ta;
-        const lineStart = value.lastIndexOf('\n', a - 1) + 1;
-        const line = value.slice(lineStart, a);
-        if (/^\s*-\s+\S/.test(line)) { e.preventDefault(); ta.setRangeText('\n- ', a, ta.selectionEnd, 'end'); commit(); }
-        else if (/^\s*-\s*$/.test(line)) { e.preventDefault(); ta.setRangeText('', lineStart, a, 'end'); commit(); }
-      }
-    });
-    paintPreview();
-    const toolbar = el('div', { class: 'rt-toolbar' },
-      el('button', { type: 'button', class: 'rt-btn', title: 'Bold (⌘B)', onclick: bold }, el('strong', { textContent: 'B' })),
-      el('button', { type: 'button', class: 'rt-btn', title: 'Bullet list', onclick: bullets, textContent: '• List' }),
-      el('button', { type: 'button', class: 'rt-btn', title: 'Link (⌘K)', onclick: link, textContent: '🔗 Link' }),
-      el('span', { class: 'rt-help', textContent: 'Select text, then click. Web addresses become links on their own.' }),
-    );
-    return wrap(f.key, f.label, f.hint, toolbar, ta, el('span', { class: 'rt-label', textContent: 'Preview · as shown in the app' }), preview);
+    const rt = richTextEditor(editing!.values[f.key] ?? '', f.placeholder ?? '', (v) => setVal(f.key, v));
+    return wrap(f.key, f.label, f.hint, rt.toolbar, rt.textarea, rt.label, rt.preview);
   }
 
   function addressEl(f: Field): HTMLElement {

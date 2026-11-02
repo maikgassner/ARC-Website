@@ -57,6 +57,24 @@ const { title, sub, active } = Astro.props;
 </Base>
 
 <style is:global>
+  /* Rich text editor (lib/richText.ts): Places and Events descriptions. */
+  .rt-toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .rt-btn {
+    min-width: 38px; height: 34px; padding: 0 12px; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--fg); font: 600 .88rem var(--font);
+  }
+  .rt-btn:hover { border-color: var(--fg-3); }
+  .rt-help { font-size: .78rem; color: var(--fg-3); margin-left: 4px; }
+  .rt-label { font-size: .72rem !important; font-weight: 800 !important; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3) !important; margin-top: 4px; }
+  .rt-preview { padding: 14px 16px; border-radius: 12px; background: var(--bg); font-size: .92rem; line-height: 1.6; color: var(--fg-2); }
+  .rt-preview p { margin: 0 0 8px; white-space: pre-wrap; }
+  .rt-preview ul { margin: 0 0 8px; padding-left: 1.2em; }
+  .rt-preview li::marker { color: var(--action); }
+  .rt-preview strong { color: var(--fg); }
+  .rt-preview a { color: var(--accent-text); font-weight: 600; text-decoration: underline; }
+  .rt-preview > :last-child { margin-bottom: 0; }
+  .rt-empty { color: var(--fg-3); }
+
   /* Component display rules (grid/flex) would otherwise beat the hidden attribute. */
   [hidden] { display: none !important; }
 
