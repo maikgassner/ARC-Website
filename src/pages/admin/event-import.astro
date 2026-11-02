@@ -37,7 +37,10 @@ import AdminShell from '../../layouts/AdminShell.astro';
       <button type="button" class="ghost-btn" data-back>← All events</button>
       <select data-source aria-label="Source"></select>
       <label class="check"><input type="checkbox" data-hide-assoc checked> Hide association meetings</label>
+      <label class="check"><input type="checkbox" data-show-skipped> Show skipped</label>
       <span class="count" data-count></span>
+      <span class="count read-at" data-read-at></span>
+      <button type="button" class="ghost-btn small" data-reread>Read again</button>
     </div>
     <div class="list" data-list></div>
   </div>
@@ -54,6 +57,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   .toolbar select { padding: 9px 12px; border-radius: 12px; border: 1.5px solid var(--ink-100); font: inherit; background: var(--surface); }
   .check { display: flex; align-items: center; gap: 6px; font-size: .9rem; font-weight: 600; color: var(--fg-2); }
   .count { margin-left: auto; color: var(--fg-3); font-size: .85rem; font-weight: 600; }
+  .count.read-at { margin-left: 0; }
   .list { display: grid; gap: 14px; margin-top: 18px; }
   .toolbar input[type="search"] { flex: 1 1 260px; width: auto; }
   .pills { display: flex; gap: 6px; }
@@ -179,6 +183,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
   let failed: string[] = [];
   let places: Place[] = [];
   let imported = new Set<string>(); // `${source}|${source_id}`
+  // Left out on purpose ("Skip", event_import_skips, 0135): same keys.
+  let skipped = new Set<string>();
   const key = (it: Item) => `${it.src.id}|${it.id}`;
   const q = <T extends Element>(s: string) => document.querySelector<T>(s)!;
 
@@ -320,9 +326,12 @@ import AdminShell from '../../layouts/AdminShell.astro';
     const hideAssoc = q<HTMLInputElement>('[data-hide-assoc]').checked;
     // Events already in Arc don't show here: they're in the list (edit them there).
     const relevant = items.filter((it) => !(hideAssoc && it.src.skipTypes?.includes(it.type)));
-    const shown = relevant.filter((it) => !imported.has(key(it)) && !sameInArc(it));
-    const inArc = relevant.length - shown.length;
-    q('[data-count]').textContent = `${shown.length} to import${inArc ? ` · ${inArc} already in Arc` : ''}`;
+    const notInArc = relevant.filter((it) => !imported.has(key(it)) && !sameInArc(it));
+    const inArc = relevant.length - notInArc.length;
+    const showSkipped = q<HTMLInputElement>('[data-show-skipped]').checked;
+    const nSkipped = notInArc.filter((it) => skipped.has(key(it))).length;
+    const shown = showSkipped ? notInArc : notInArc.filter((it) => !skipped.has(key(it)));
+    q('[data-count]').textContent = `${notInArc.length - nSkipped} to import${inArc ? ` · ${inArc} already in Arc` : ''}${nSkipped ? ` · ${nSkipped} skipped` : ''}`;
     const list = q<HTMLElement>('[data-list]');
     const problems = failed.map((f) => el('p', { class: 'note', textContent: `⚠︎ ${f}` }));
     list.replaceChildren(...problems, ...(shown.length ? shown.map(card) : [el('p', { class: 'note', textContent: inArc ? 'Everything upcoming here is in Arc already.' : 'No upcoming events here.' })]));
@@ -334,6 +343,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
   function card(it: Item) {
     const done = !it.editId && imported.has(key(it));
     const isEdit = !!it.editId;
+    const isSkipped = !isEdit && skipped.has(key(it));
     const readOnly = isEdit && !it.mine;
     const place = matchPlace(it);
     const field = (label: string, input: HTMLElement, opts: { full?: boolean; hint?: string } = {}) =>
@@ -491,7 +501,21 @@ import AdminShell from '../../layouts/AdminShell.astro';
       fileInput,
     );
 
-    return el('article', { class: `ev${done ? ' done' : ''}${isDraft && !isEdit ? ' draft' : ''}` },
+    // Not for Arc: hidden from this list for every admin (Show skipped brings it back).
+    const skipBtn = el('button', { type: 'button', class: 'ev-upload', textContent: isSkipped ? 'Unskip' : 'Skip this one' });
+    skipBtn.addEventListener('click', async () => {
+      skipBtn.disabled = true;
+      const k = { source: it.src.id, source_id: it.id };
+      const { error } = isSkipped
+        ? await sb.from('event_import_skips').delete().match(k)
+        : await sb.from('event_import_skips').insert({ ...k, title: it.title, event_date: it.start });
+      if (error) { skipBtn.disabled = false; return showError(error.message); }
+      isSkipped ? skipped.delete(key(it)) : skipped.add(key(it));
+      toast(isSkipped ? `Back in the list: ${it.title}` : `Skipped: ${it.title}`);
+      render();
+    });
+
+    return el('article', { class: `ev${done || isSkipped ? ' done' : ''}${isDraft && !isEdit ? ' draft' : ''}` },
       img,
       el('div', { class: 'ev-body' },
         el('div', { class: 'ev-meta' },
@@ -502,6 +526,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
           it.type && el('span', { class: 'ev-tag', textContent: it.type }),
           it.locName && el('span', { textContent: `📍 ${it.locName}` }),
           done && el('span', { class: 'ev-tag ok', textContent: 'In Arc' }),
+          isSkipped && el('span', { class: 'ev-tag', textContent: 'Skipped' }),
         ),
         el('div', { class: 'ev-grid' },
           field('Title', title, { full: true }),
@@ -521,6 +546,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
             : isDraft
             ? el('button', { type: 'button', class: 'ev-upload', textContent: 'Discard', onclick: () => { drafts = drafts.filter((d) => d !== it); showList(); } })
             : el('a', { href: it.link || it.src.page, target: '_blank', rel: 'noopener', textContent: `Open on ${it.src.label} ↗` }),
+          !isEdit && !isDraft && !done && skipBtn,
           btn,
         ),
       ),
@@ -560,7 +586,6 @@ import AdminShell from '../../layouts/AdminShell.astro';
   let when: 'upcoming' | 'past' | 'all' = 'upcoming';
   let myId = '';
   let editing: Item | null = null;
-  let importLoaded = false;
 
   function show(view: 'events' | 'import' | 'editor') {
     q<HTMLElement>('[data-events-view]').hidden = view !== 'events';
@@ -650,20 +675,50 @@ import AdminShell from '../../layouts/AdminShell.astro';
     q('#places').replaceChildren(...places.map((p) => el('option', { value: p.name, label: p.kind === 'tunnel' ? 'Tunnel' : 'Dropzone' })));
   }
 
-  async function load() {
+  // What a source returned stays in this tab (sessionStorage) until "Read
+  // again": switching sources, going back to the list or reloading the page
+  // doesn't read the pages (Claude calls) again.
+  const cacheKey = (src: Source) => `arc-evimport:${(sb as any).supabaseUrl ?? ''}:${src.id}`;
+  let readAt: number | null = null;
+  async function readSource(src: Source, fresh: boolean): Promise<Item[]> {
+    if (!fresh) {
+      try {
+        const raw = sessionStorage.getItem(cacheKey(src));
+        if (raw) {
+          const cached = JSON.parse(raw) as { at: number; items: Omit<Item, 'src'>[] };
+          readAt = Math.min(readAt ?? cached.at, cached.at);
+          return cached.items.map((it) => ({ ...it, src }));
+        }
+      } catch { /* no storage: read the page */ }
+    }
+    const list = await fetchSource(src);
+    const at = Date.now();
+    readAt = Math.min(readAt ?? at, at);
+    try {
+      sessionStorage.setItem(cacheKey(src), JSON.stringify({ at, items: list.map(({ src: _s, file: _f, ...rest }) => rest) }));
+    } catch { /* full or blocked: just not kept */ }
+    return list;
+  }
+
+  async function load(fresh = false) {
+    readAt = null;
     const reading = selected.length > 1 ? `Reading ${selected.length} sources… (the pages take a few seconds each)` : `Reading ${selected[0].label}…`;
     q<HTMLElement>('[data-list]').replaceChildren(el('p', { class: 'note', textContent: reading }));
     q('[data-count]').textContent = '';
     try {
-      const [fetched, done] = await Promise.all([
-        Promise.allSettled(selected.map(fetchSource)),
+      const [fetched, done, skips] = await Promise.all([
+        Promise.allSettled(selected.map((src) => readSource(src, fresh))),
         sb.from('events').select('source, source_id').in('source', selected.map((s) => s.id)),
+        sb.from('event_import_skips').select('source, source_id').in('source', selected.map((s) => s.id)),
       ]);
       if (done.error) throw done.error;
+      // Before 0135 is on this database there's no table: nothing skipped.
+      skipped = new Set((skips.data ?? []).map((r: any) => `${r.source}|${r.source_id}`));
       // One source failing (site down) doesn't hide the others.
       failed = fetched.flatMap((r, i) => (r.status === 'rejected' ? [`Couldn't read ${selected[i].label}: ${r.reason?.message ?? r.reason}`] : []));
       items = fetched.flatMap((r) => (r.status === 'fulfilled' ? r.value : [])).sort((a, b) => a.start.localeCompare(b.start));
       imported = new Set((done.data ?? []).map((r: any) => `${r.source}|${r.source_id}`));
+      q('[data-read-at]').textContent = readAt ? `Read ${new Date(readAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}` : '';
       render();
     } catch (e: any) {
       q<HTMLElement>('[data-list]').replaceChildren();
@@ -690,8 +745,9 @@ import AdminShell from '../../layouts/AdminShell.astro';
   // The sources are only read here (the page sources cost a Claude call each).
   q('[data-import]').addEventListener('click', () => {
     show('import');
-    if (!importLoaded) { importLoaded = true; load(); } else render();
+    load();
   });
+  q('[data-reread]').addEventListener('click', () => load(true));
   document.querySelectorAll<HTMLElement>('[data-back]').forEach((b) => b.addEventListener('click', () => { showList(); loadEvents(); }));
   q('[data-ev-search]').addEventListener('input', renderEvents);
   document.querySelectorAll<HTMLButtonElement>('[data-when]').forEach((b) => b.addEventListener('click', () => {
@@ -700,11 +756,11 @@ import AdminShell from '../../layouts/AdminShell.astro';
     renderEvents();
   }));
   q('[data-hide-assoc]').addEventListener('change', render);
+  q('[data-show-skipped]').addEventListener('change', render);
 
   initAdmin(async (client) => {
     sb = client;
     myId = (await sb.auth.getUser()).data.user?.id ?? '';
-    importLoaded = false;
     showList();
     try { await loadPlaces(); } catch (e: any) { showError(e?.message ?? String(e)); }
     await loadEvents();
