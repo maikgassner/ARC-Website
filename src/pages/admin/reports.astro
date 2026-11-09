@@ -25,7 +25,15 @@ import AdminShell from '../../layouts/AdminShell.astro';
   </section>
 
   <section>
-    <h2>Month by month</h2>
+    <div class="sec-head">
+      <h2>Month by month</h2>
+      <!-- One year at a time: the months without the year on every row. -->
+      <div class="year-switch">
+        <button type="button" class="year-btn" data-year-prev aria-label="Previous year">‹</button>
+        <strong data-year></strong>
+        <button type="button" class="year-btn" data-year-next aria-label="Next year">›</button>
+      </div>
+    </div>
     <div class="card scroll"><table class="table" data-monthly></table></div>
     <p class="note">Jumps by date added to Arc, split into logged, old jumps added by hand and imported. The split and active users only count from the update that records them (migration 0101) on.</p>
   </section>
@@ -140,6 +148,12 @@ import AdminShell from '../../layouts/AdminShell.astro';
   .sec-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
   .sec-head h2 { margin: 0; }
   .sec-head select { width: auto; }
+  .year-switch { display: flex; align-items: center; gap: 10px; }
+  .year-switch strong { font-size: 17px; min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; }
+  .year-btn { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border, #e5e5e5); background: #fff; font-size: 18px; line-height: 1; cursor: pointer; color: inherit; }
+  .year-btn:disabled { opacity: .35; cursor: default; }
+  .split { margin-left: 8px; color: #8a8f94; font-size: 12px; white-space: nowrap; }
+  .bar-year { display: block; font-size: 10px; color: #8a8f94; }
   .card { background: var(--surface); box-shadow: var(--shadow); border-radius: 18px; padding: 18px; }
   .card.scroll { overflow-x: auto; padding: 6px 0; }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
@@ -204,7 +218,14 @@ import AdminShell from '../../layouts/AdminShell.astro';
   let report: Report | null = null;
   const q = <T extends Element>(s: string) => document.querySelector<T>(s)!;
   const nf = (n: number) => n.toLocaleString('de-CH');
-  const monthName = (m: string) => new Date(`${m}-01T00:00:00`).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
+  // "Nov" in the year table and the bars (the year is shown once), "November 2026" in pickers.
+  const monthShort = (m: string) => new Date(`${m}-01T00:00:00`).toLocaleDateString('en-GB', { month: 'short' });
+  const monthLong = (m: string) => new Date(`${m}-01T00:00:00`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  // Arc's first users: no earlier year to go back to.
+  const FIRST_YEAR = 2026;
+  const thisYear = new Date().getFullYear();
+  let tableYear = thisYear;
+  let yearMonths: Month[] = [];
 
   // Countries: the app stores ISO codes ("CH"), DZs a name ("Switzerland") —
   // both become one English name with a flag.
@@ -250,7 +271,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
     // Users per month bars
     const max = Math.max(1, ...r.monthly.map((m) => Math.max(m.new_users, m.active_users)));
-    q('[data-user-bars]').replaceChildren(...r.monthly.map((m) => {
+    q('[data-user-bars]').replaceChildren(...r.monthly.map((m, i) => {
       const bar = (cls: string, v: number) => {
         const b = el('div', { class: `bar ${cls}`, title: `${v}` });
         b.style.height = `${(v / max) * 100}%`;
@@ -259,25 +280,12 @@ import AdminShell from '../../layouts/AdminShell.astro';
       };
       return el('div', { class: 'bar-col' },
         el('div', { class: 'bar-pair' }, bar('new', m.new_users), bar('active', m.active_users)),
-        el('div', { class: 'bar-label' }, monthName(m.month)));
+        // The year under the first bar and every January.
+        el('div', { class: 'bar-label' }, monthShort(m.month), (i === 0 || m.month.endsWith('-01')) ? el('span', { class: 'bar-year' }, m.month.slice(0, 4)) : null));
     }));
 
-    // Monthly table, newest first
-    const cols: [keyof Month | 'jumps_split', string][] = [
-      ['month', 'Month'], ['new_users', 'New users'], ['active_users', 'Active'], ['jumps_split', 'Jumps (log · old · import)'],
-      ['jumpers_logging', 'Jumpers logging'], ['tunnel_sessions', 'Tunnel'], ['messages', 'Messages'], ['chatters', 'Chatting'],
-      ['sign_requests', 'Sign requests'], ['jumps_signed', 'Signed'], ['friendships', 'Friendships'], ['posts', 'Posts'], ['reviews', 'Reviews'],
-    ];
     const num = (v: number) => el('td', { class: v ? undefined : 'zero' }, nf(v));
-    const table = q<HTMLTableElement>('[data-monthly]');
-    table.replaceChildren(
-      el('thead', {}, el('tr', {}, ...cols.map(([, h]) => el('th', {}, h)))),
-      el('tbody', {}, ...[...r.monthly].reverse().map((m) => el('tr', {}, ...cols.map(([k]) => {
-        if (k === 'month') return el('td', {}, el('strong', {}, monthName(m.month)));
-        if (k === 'jumps_split') return el('td', { class: m.jumps ? undefined : 'zero' }, nf(m.jumps), m.jumps ? el('small', {}, `  ${m.jumps_log} · ${m.jumps_backfill} · ${m.jumps_import}`) : null);
-        return num(m[k] as number);
-      })))),
-    );
+    renderYear();
 
     renderCountries();
 
@@ -300,6 +308,37 @@ import AdminShell from '../../layouts/AdminShell.astro';
     );
   }
 
+  // Month by month: one year (Jan … this month), newest first.
+  const MONTH_COLS: [keyof Month | 'jumps_split', string][] = [
+    ['month', 'Month'], ['new_users', 'New users'], ['active_users', 'Active'], ['jumps_split', 'Jumps (log · old · import)'],
+    ['jumpers_logging', 'Jumpers logging'], ['tunnel_sessions', 'Tunnel'], ['messages', 'Messages'], ['chatters', 'Chatting'],
+    ['sign_requests', 'Sign requests'], ['jumps_signed', 'Signed'], ['friendships', 'Friendships'], ['posts', 'Posts'], ['reviews', 'Reviews'],
+  ];
+  async function loadYear() {
+    q('[data-year]').textContent = String(tableYear);
+    q<HTMLButtonElement>('[data-year-prev]').disabled = tableYear <= FIRST_YEAR;
+    q<HTMLButtonElement>('[data-year-next]').disabled = tableYear >= thisYear;
+    // Enough months back to reach January of that year.
+    const back = (thisYear - tableYear) * 12 + new Date().getMonth() + 1;
+    const { data, error } = await sb.rpc('admin_report', { p_months: back });
+    if (error) { showError(error.message); return; }
+    yearMonths = ((data as Report).monthly ?? []).filter((m) => m.month.startsWith(`${tableYear}-`));
+    renderYear();
+  }
+  function renderYear() {
+    const num = (v: number) => el('td', { class: v ? undefined : 'zero' }, nf(v));
+    const table = q<HTMLTableElement>('[data-monthly]');
+    table.replaceChildren(
+      el('thead', {}, el('tr', {}, ...MONTH_COLS.map(([, h]) => el('th', {}, h)))),
+      el('tbody', {}, ...[...yearMonths].reverse().map((m) => el('tr', {}, ...MONTH_COLS.map(([k]) => {
+        if (k === 'month') return el('td', {}, el('strong', {}, monthShort(m.month)));
+        if (k === 'jumps_split') return el('td', { class: m.jumps ? undefined : 'zero' }, nf(m.jumps),
+          m.jumps ? el('span', { class: 'split' }, `${nf(m.jumps_log)} · ${nf(m.jumps_backfill)} · ${nf(m.jumps_import)}`) : null);
+        return num(m[k] as number);
+      })))),
+    );
+  }
+
   function hrow(label: string, v: number, of: number, pct: boolean) {
     const fill = el('div', { class: 'fill' });
     fill.style.width = `${Math.min(100, (v / Math.max(1, of)) * 100)}%`;
@@ -312,7 +351,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     const sel = q<HTMLSelectElement>('[data-country-month]');
     const prev = sel.value || 'all';
     const ms = [...report.monthly].reverse().map((m) => m.month);
-    sel.replaceChildren(el('option', { value: 'all' }, 'All time'), ...ms.map((m) => el('option', { value: m }, monthName(m))));
+    sel.replaceChildren(el('option', { value: 'all' }, 'All time'), ...ms.map((m) => el('option', { value: m }, monthLong(m))));
     sel.value = ms.includes(prev) || prev === 'all' ? prev : 'all';
     const rows = report.countries.filter((c) => sel.value === 'all' || c.month === sel.value);
     const by = new Map<string, { label: string; users: number }>();
@@ -340,6 +379,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
   document.querySelectorAll<HTMLButtonElement>('[data-months]').forEach((b) => b.addEventListener('click', () => { months = Number(b.dataset.months); load(); }));
   q('[data-country-month]').addEventListener('change', renderCountries);
+  q('[data-year-prev]').addEventListener('click', () => { if (tableYear > FIRST_YEAR) { tableYear--; loadYear(); } });
+  q('[data-year-next]').addEventListener('click', () => { if (tableYear < thisYear) { tableYear++; loadYear(); } });
   q('[data-csv]').addEventListener('click', downloadCsv);
 
   // ---------- How Arc is used (admin_ux_report, migration 0121) ----------
@@ -432,5 +473,5 @@ import AdminShell from '../../layouts/AdminShell.astro';
 
   document.querySelectorAll<HTMLButtonElement>('[data-days]').forEach((b) => b.addEventListener('click', () => { uxDays = Number(b.dataset.days); loadUx(); }));
 
-  initAdmin((client) => { sb = client; loadUx(); return load(); });
+  initAdmin((client) => { sb = client; loadUx(); loadYear(); return load(); });
 </script>
