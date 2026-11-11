@@ -188,10 +188,12 @@ export function funnel(steps: { label: string; value: number; median?: string; l
 }
 
 // ── heatmap (cohort × day) ───────────────────────────────────────────
-export function heatmap(rows: { label: string; n: number; cells: (number | null)[]; ns: (number | null)[] }[], cols: string[]): HTMLTableElement {
+// counts: "1 of 2" under each share; a cell resting on fewer than minN people
+// stays grey (no colour that suggests a result), the numbers still show.
+export function heatmap(rows: { label: string; n: number; cells: (number | null)[]; ns: (number | null)[]; counts?: (string | null)[] }[], cols: string[], minN = 5): HTMLTableElement {
   const t = document.createElement('table'); t.className = 'an-heat';
   const head = document.createElement('tr');
-  for (const h of ['Sign-up week', 'People', ...cols]) { const th = document.createElement('th'); th.textContent = h; head.append(th); }
+  for (const h of ['Signed up', 'People', ...cols]) { const th = document.createElement('th'); th.textContent = h; head.append(th); }
   t.append(head);
   for (const r of rows) {
     const tr = document.createElement('tr');
@@ -201,10 +203,13 @@ export function heatmap(rows: { label: string; n: number; cells: (number | null)
       const td = document.createElement('td');
       if (v == null) { td.textContent = '·'; td.className = 'an-heat-na'; }
       else {
+        const few = (r.ns[i] ?? 0) < minN;
         const step = v === 0 ? 0 : v < 10 ? 1 : v < 25 ? 2 : v < 45 ? 3 : v < 65 ? 4 : 5;
-        td.className = `an-heat-${step}`;
-        td.textContent = `${nf(v)} %`;
-        hover(td, () => [`${r.label} · ${cols[i]}`, ['Came back', `${nf(v)} %`], ['Of', nf(r.ns[i] ?? 0)]]);
+        td.className = few ? 'an-heat-few' : `an-heat-${step}`;
+        const pct = document.createElement('span'); pct.textContent = `${nf(v)} %`;
+        td.append(pct);
+        if (r.counts?.[i]) { const c = document.createElement('small'); c.textContent = r.counts[i]!; td.append(c); }
+        hover(td, () => [`${r.label} · ${cols[i]}`, ['Came back', r.counts?.[i] ?? `${nf(v)} %`], ...(few ? [`Fewer than ${minN} people: a hint, not a result.`] : [])]);
       }
       tr.append(td);
     });

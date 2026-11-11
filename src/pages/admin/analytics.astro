@@ -133,6 +133,8 @@ import AdminShell from '../../layouts/AdminShell.astro';
   :global(.an-heat td) { text-align: center; padding: 8px 4px; border-radius: 6px; font-variant-numeric: tabular-nums; }
   :global(.an-heat-n) { color: var(--fg-2); background: none; }
   :global(.an-heat-na) { color: var(--ink-200); }
+  :global(.an-heat td small) { display: block; font-size: .72rem; opacity: .85; font-weight: 500; }
+  :global(.an-heat-few) { background: var(--seq-0); color: var(--fg-2); }
   :global(.an-heat-0) { background: var(--seq-0); color: var(--fg-3); }
   :global(.an-heat-1) { background: var(--seq-1); }
   :global(.an-heat-2) { background: var(--seq-2); }
@@ -196,7 +198,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     median_session: 'The typical session: half are shorter, half longer (median). p90 = 9 in 10 are shorter.',
     new_users: 'Accounts created in the period.',
     mau: 'People with a session in the last 30 days before the period ends. Stickiness = average daily active / monthly active.',
-    retention: 'Of the people who signed up in a week: who was active again on day 1, in days 7–13, 14–29, 30–59 (from the daily activity ping, also older app builds). "·" = not reached yet.',
+    retention: 'Of the people who signed up in a week: who opened Arc again the next day, in their second week (days 7–13), in weeks 3–4 (days 14–29) and in their second month (days 30–59). Counted from the daily activity ping, so older app versions count too. "·" = that time hasn\'t come yet for this week.',
     funnel: 'People (devices before sign-up) who reached each onboarding step in the period, in the order of the flow. The drop is how many fewer reached the next step.',
     aha: 'Aha 1 "arrived": the skill chart was reached. Aha 2 "activated": the first jump or tunnel session in the logbook (logged or imported). Time from sign-up.',
     groups: 'People who signed up in the period, grouped by the aha moments reached, and how many were active again in days 7–13 and 30–59.',
@@ -217,10 +219,17 @@ import AdminShell from '../../layouts/AdminShell.astro';
     b.addEventListener('mouseleave', hideTip); b.addEventListener('blur', hideTip);
     return b;
   };
-  const nBadge = (n: number, what = 'n') => el('span', { class: `an-n${n < MIN_N ? ' low' : ''}`, title: n < MIN_N ? 'Few cases: read as a hint, not a result.' : '' }, `${what} ${nf(n)}${n < MIN_N ? ' · few' : ''}`);
+  // What the number in the badge counts, per view ("8 people", "120 runs").
+  const UNIT: Record<string, string> = {
+    users: 'people', retention: 'people', funnel: 'people', groups: 'people', aha: 'sign-ups', median_session: 'sessions', sessions: 'sessions',
+    flow: 'runs', steps: 'runs', resumed: 'interrupted runs', matrix: 'screen views', screens: 'screen views', friction: 'screen views', ui: 'uses', compare: 'sessions',
+  };
+  // "Based on 8 people · small sample": how much the view rests on.
+  const nBadge = (n: number, unit = 'cases') => el('span', { class: `an-n${n < MIN_N ? ' low' : ''}`, title: n < MIN_N ? `Fewer than ${MIN_N}: read it as a hint, not a result. One person more or less changes the picture.` : '' },
+    `Based on ${nf(n)} ${unit}${n < MIN_N ? ' · small sample' : ''}`);
   function card(title: string, sub: string, def: string | null, n: number | null, ...body: (Node | null)[]) {
     return el('section', { class: 'an-card' },
-      el('h3', {}, title, def ? info(def) : null, n == null ? null : nBadge(n)),
+      el('h3', {}, title, def ? info(def) : null, n == null ? null : nBadge(n, (def && UNIT[def]) || 'cases')),
       sub ? el('p', { class: 'an-sub' }, sub) : null, ...body);
   }
   const empty = (what: string, why: string) => el('p', { class: 'an-empty' }, el('b', {}, what), ` ${why}`);
@@ -307,11 +316,12 @@ import AdminShell from '../../layouts/AdminShell.astro';
     const hist = card('How long is a session?', 'Sessions by time on screen. The typical one is in the middle, not the average.', 'median_session', t.sessions,
       t.sessions ? columns({ items: buckets.map((b) => ({ label: b, value: d.session_hist?.[b] ?? 0 })) }) : empty('No sessions in this period.', 'Usage events arrive from the app update of 12 Nov 2026 on.'));
 
-    const cols = ['Day 1', 'Days 7–13', 'Days 14–29', 'Days 30–59'];
+    const cols = ['Next day', 'In week 2', 'In weeks 3–4', 'In month 2'];
     const ret = (d.retention as any[]).filter((r) => r.n > 0);
-    const heat = card('Do they come back?', 'Weekly sign-up cohorts, share active again. Darker = more.', 'retention', ret.reduce((a, r) => a + r.n, 0),
+    const heat = card('Do new people come back?', 'One row per week of sign-ups: of those people, how many opened Arc again later. "1 of 2" = one of the two came back. Colour only from 5 people on, darker = more came back. "·" = that time hasn\'t come yet.', 'retention', ret.reduce((a, r) => a + r.n, 0),
       ret.length ? el('div', { class: 'an-scroll' }, heatmap(ret.slice().reverse().map((r) => ({
-        label: new Date(r.cohort).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), n: r.n,
+        label: `Week of ${new Date(r.cohort).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`, n: r.n,
+        counts: [[r.d1, r.e1], [r.d7, r.e7], [r.d14, r.e14], [r.d30, r.e30]].map(([v, e]) => (e ? `${v} of ${e}` : null)),
         cells: [[r.d1, r.e1], [r.d7, r.e7], [r.d14, r.e14], [r.d30, r.e30]].map(([v, e]) => (e ? Math.round((v / e) * 100) : null)),
         ns: [r.e1, r.e7, r.e14, r.e30],
       })), cols)) : empty('No sign-ups in the last 12 weeks.', ''));
