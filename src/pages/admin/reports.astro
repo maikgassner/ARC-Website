@@ -70,6 +70,47 @@ import AdminShell from '../../layouts/AdminShell.astro';
       <div class="card" data-ux-notifications></div>
     </section>
   </div>
+
+  <!-- ======= Skill assessment + logbook import (admin_flow_report, 0158) ======= -->
+  <section>
+    <h2>Skill assessment</h2>
+    <div class="tiles ux" data-sk-tiles></div>
+  </section>
+  <div class="two">
+    <section>
+      <h2>Where people stop</h2>
+      <div class="card" data-sk-left></div>
+      <p class="note">The screen or question they were on when they tapped Finish later, closed it or skipped on.</p>
+    </section>
+    <section>
+      <h2>Re-assessments per person</h2>
+      <div class="card" data-sk-re></div>
+    </section>
+  </div>
+  <section>
+    <h2>By discipline</h2>
+    <div class="card scroll"><table class="table" data-sk-groups></table></div>
+  </section>
+
+  <section>
+    <h2>Logbook import</h2>
+    <div class="tiles ux" data-im-tiles></div>
+  </section>
+  <section>
+    <h2>Scan vs file vs draft</h2>
+    <div class="card scroll"><table class="table" data-im-kinds></table></div>
+    <p class="note">One row per visit of the import. Saved = jumps into the logbook (checked one by one, by a decision on the overview, automatically, or "Import all").</p>
+  </section>
+  <div class="two">
+    <section>
+      <h2>How visits end</h2>
+      <div class="card" data-im-outcomes></div>
+    </section>
+    <section>
+      <h2>Scanned pages</h2>
+      <div class="card" data-im-pages></div>
+    </section>
+  </div>
   <!-- ======= Users and activity, month by month (admin_report, 0101) ======= -->
   <div class="ux-head">
     <h2 class="ux-title">Users and activity</h2>
@@ -415,6 +456,98 @@ import AdminShell from '../../layouts/AdminShell.astro';
   const screenLabel = (p: string) => SCREEN_LABEL[p] ?? p.replace(/^\//, '').replace(/[-/]/g, ' ').replace(/^./, (c) => c.toUpperCase());
   const mins = (m: number | null | undefined) => (m == null ? '–' : m < 1 ? `${Math.round(m * 60)} s` : `${m.toLocaleString('de-CH')} min`);
 
+  // ---------- Skill assessment + import (admin_flow_report, migration 0158) ----------
+  type Flow = {
+    skill: {
+      contexts: { context: string; started: number; users: number; finished: number; finished_complete: number; median_min: number | null; avg_min: number | null; avg_answers: number | null; finish_later: number; closed: number; skipped: number; redo: number }[];
+      left_at: { at: string; context: string; times: number; avg_answers: number | null }[];
+      groups: { grp: string; opened: number; resumed: number; done: number; median_min: number | null }[];
+      reassess_per_person: { n: number; people: number }[];
+    };
+    import: {
+      kinds: { kind: string; imports: number; users: number; median_min: number | null; avg_reviewed: number | null; avg_saved: number | null; saved: number; auto: number; quick: number; decisions: number; dropped: number; done: number; to_draft: number; discarded: number; left_open: number }[];
+      pages: { reads: number; pages: number; failed: number; turned: number; rows: number; reread: number; median_s_per_page: number | null };
+      misc: { photos_camera: number; photos_album: number; files: number; file_rows: number; drafts_opened: number; drafts_joined: number; imports_per_session: number | null; jumps_by_source: Record<string, number> };
+    };
+  };
+  const GROUP_LABEL: Record<string, string> = { belly: 'Belly', freefly: 'Freefly', angle: 'Angle', canopy: 'Canopy', tunnel: 'Bodyfly Indoor', wingsuit: 'Wingsuit Sky', ws_tunnel: 'Wingsuit Indoor', swoop: 'Swoop', crw: 'Canopy formation', accuracy: 'Accuracy' };
+  const AT_LABEL: Record<string, string> = { 'skill-intro': 'Intro', 'skill-interests': 'What do you fly?', 'skill-overview': 'Overview', 'skill-total': 'Total tunnel time', 'skill-chart': 'Chart' };
+  async function loadFlow() {
+    const { data, error } = await sb.rpc('admin_flow_report', { p_days: uxDays });
+    if (error) {
+      const msg = error.message.includes('admin_flow_report') ? 'Needs migration 0158 on this database.' : error.message;
+      q('[data-sk-tiles]').replaceChildren(el('p', { class: 'empty' }, msg));
+      q('[data-im-tiles]').replaceChildren(el('p', { class: 'empty' }, msg));
+      return;
+    }
+    renderFlow(data as Flow);
+  }
+  function renderFlow(f: Flow) {
+    const tile = (v: string, label: string) => el('div', { class: 'r-tile' }, el('strong', {}, v), el('span', {}, label));
+    const empty = (t: string) => el('p', { class: 'empty' }, t);
+    const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)} %` : '–');
+    const on = f.skill.contexts.find((c) => c.context === 'onboarding');
+    const re = f.skill.contexts.find((c) => c.context === 'reassess');
+    q('[data-sk-tiles]').replaceChildren(
+      tile(nf(on?.started ?? 0), 'Started in onboarding'),
+      tile(pct(on?.finished ?? 0, on?.started ?? 0), 'Reached the chart (onboarding)'),
+      tile(mins(on?.median_min), 'Typical time, onboarding'),
+      tile(nf(re?.started ?? 0), `Re-assessments (${nf(re?.users ?? 0)} people)`),
+      tile(mins(re?.median_min), 'Typical time, re-assessment'),
+      tile(nf((on?.finish_later ?? 0) + (re?.finish_later ?? 0)), 'Saved for later'),
+    );
+    const maxL = Math.max(1, ...f.skill.left_at.map((x) => x.times));
+    q('[data-sk-left]').replaceChildren(...(f.skill.left_at.length
+      ? f.skill.left_at.map((x) => hrow(`${AT_LABEL[x.at] ?? x.at} · ${x.context === 'reassess' ? 're-assess' : 'onboarding'}`, x.times, maxL, false))
+      : [empty('Nobody stopped halfway yet.')]));
+    const people = f.skill.reassess_per_person.reduce((a, x) => a + x.people, 0);
+    q('[data-sk-re]').replaceChildren(...(people
+      ? f.skill.reassess_per_person.map((x) => hrow(x.n >= 3 ? '3 times or more' : x.n === 1 ? 'Once' : 'Twice', x.people, people, true))
+      : [empty('No re-assessments yet.')]));
+    const gt = q<HTMLTableElement>('[data-sk-groups]');
+    gt.replaceChildren(
+      el('thead', {}, el('tr', {}, ...['Discipline', 'Opened', 'Picked up again', 'Finished', 'Typical time'].map((h) => el('th', {}, h)))),
+      el('tbody', {}, ...(f.skill.groups.length ? f.skill.groups.map((g) => el('tr', {},
+        el('td', {}, el('strong', {}, GROUP_LABEL[g.grp] ?? g.grp)), el('td', {}, nf(g.opened)), el('td', {}, nf(g.resumed)),
+        el('td', {}, `${nf(g.done)}  `, el('small', {}, pct(g.done, g.opened))), el('td', {}, mins(g.median_min)))) : [el('tr', {}, el('td', { colspan: '5', class: 'zero' }, 'Nothing yet.'))])),
+    );
+
+    const m = f.import.misc;
+    const kind = (k: string) => f.import.kinds.find((x) => x.kind === k);
+    const saved = f.import.kinds.reduce((a, x) => a + (x.saved ?? 0), 0);
+    q('[data-im-tiles]').replaceChildren(
+      tile(nf(kind('scan')?.imports ?? 0), `Photo scans (${nf(kind('scan')?.users ?? 0)} people)`),
+      tile(nf(kind('file')?.imports ?? 0), `File imports (${nf(kind('file')?.users ?? 0)} people)`),
+      tile(nf(m.drafts_opened + m.drafts_joined), 'Drafts picked up'),
+      tile(nf(saved), 'Jumps saved'),
+      tile(String(m.imports_per_session ?? '–'), 'Imports per session'),
+      tile(`${nf(m.photos_camera)} · ${nf(m.photos_album)}`, 'Photos: camera · album'),
+    );
+    const KIND: Record<string, string> = { scan: 'Photo scan', file: 'Excel / CSV', draft: 'Draft continued' };
+    const kt = q<HTMLTableElement>('[data-im-kinds]');
+    kt.replaceChildren(
+      el('thead', {}, el('tr', {}, ...['', 'Visits', 'Typical time', 'Checked one by one', 'Saved', 'Automatic', 'Import all', 'Decisions', 'Skipped'].map((h) => el('th', {}, h)))),
+      el('tbody', {}, ...(f.import.kinds.length ? f.import.kinds.map((k) => el('tr', {},
+        el('td', {}, el('strong', {}, KIND[k.kind] ?? k.kind)), el('td', {}, nf(k.imports)), el('td', {}, mins(k.median_min)),
+        el('td', {}, `${k.avg_reviewed ?? 0} per visit`), el('td', {}, nf(k.saved)), el('td', {}, nf(k.auto)), el('td', {}, nf(k.quick)),
+        el('td', {}, nf(k.decisions)), el('td', {}, nf(k.dropped)))) : [el('tr', {}, el('td', { colspan: '9', class: 'zero' }, 'No imports yet.'))])),
+    );
+    const visits = f.import.kinds.reduce((a, x) => a + x.imports, 0);
+    const outs = [
+      ['All done', f.import.kinds.reduce((a, x) => a + x.done, 0)],
+      ['Saved as a draft', f.import.kinds.reduce((a, x) => a + x.to_draft, 0)],
+      ['Discarded', f.import.kinds.reduce((a, x) => a + x.discarded, 0)],
+      ['Left without deciding', f.import.kinds.reduce((a, x) => a + x.left_open, 0)],
+    ] as const;
+    q('[data-im-outcomes]').replaceChildren(...(visits ? outs.map(([l, v]) => hrow(l, v, visits, true)) : [empty('No imports yet.')]));
+    const pg = f.import.pages;
+    q('[data-im-pages]').replaceChildren(...(pg.pages
+      ? [hrow('Pages read', pg.pages, pg.pages, false), hrow('Could not be read', pg.failed, pg.pages, true), hrow('Had to be turned', pg.turned, pg.pages, true),
+         hrow('Jumps found', pg.rows, Math.max(pg.rows, 1), false), hrow('Read again (failed pages)', pg.reread, Math.max(pg.reads, 1), false),
+         el('p', { class: 'note' }, `Typical reading time ${pg.median_s_per_page ?? '–'} s per page.`)]
+      : [empty('No pages scanned yet.')]));
+  }
+
   async function loadUx() {
     document.querySelectorAll<HTMLButtonElement>('[data-days]').forEach((b) => b.setAttribute('aria-checked', String(Number(b.dataset.days) === uxDays)));
     const { data, error } = await sb.rpc('admin_ux_report', { p_days: uxDays });
@@ -423,6 +556,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
       return;
     }
     renderUx(data as Ux);
+    loadFlow();
   }
 
   function renderUx(u: Ux) {
