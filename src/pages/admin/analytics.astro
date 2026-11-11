@@ -1,0 +1,587 @@
+---
+// UX analytics dashboard (ARC/docs/analytics-concept.md §5): one question per
+// view, definitions in (i), n on everything, honest empty states. Data from the
+// admin_an_* RPCs (ARC migration 0160) over app_events (0121 / 0159).
+import AdminShell from '../../layouts/AdminShell.astro';
+---
+<AdminShell title="Analytics" sub="Where people spend time, where they struggle, and what changed." active="analytics">
+  <div class="an">
+    <!-- Filters: one row, apply to every view. -->
+    <div class="an-filters" role="group" aria-label="Filters">
+      <div class="pills" role="radiogroup" aria-label="Period">
+        <button type="button" role="radio" data-days="7">7 days</button>
+        <button type="button" role="radio" data-days="30">30 days</button>
+        <button type="button" role="radio" data-days="90">90 days</button>
+      </div>
+      <label class="an-sel"><span>Platform</span>
+        <select data-f="platform"><option value="">All</option><option value="ios">iOS</option><option value="android">Android</option></select></label>
+      <label class="an-sel"><span>Version</span><select data-f="version"><option value="">All</option></select></label>
+      <label class="an-sel"><span>People</span>
+        <select data-f="audience"><option value="">Everyone</option><option value="new">New (first 7 days)</option><option value="returning">Returning</option></select></label>
+      <label class="an-sel"><span>Plan</span>
+        <select data-f="premium"><option value="">All</option><option value="true">Premium</option><option value="false">Free</option></select></label>
+    </div>
+
+    <nav class="an-tabs" role="tablist" aria-label="Views">
+      <button type="button" role="tab" data-tab="overview">Overview</button>
+      <button type="button" role="tab" data-tab="onboarding">Onboarding</button>
+      <button type="button" role="tab" data-tab="flows">Flows</button>
+      <button type="button" role="tab" data-tab="screens">Screens</button>
+      <button type="button" role="tab" data-tab="friction">Friction</button>
+      <button type="button" role="tab" data-tab="compare">Releases &amp; notes</button>
+    </nav>
+
+    <p class="an-note" data-an-note></p>
+    <div data-an-view></div>
+  </div>
+
+  <dialog class="an-drawer" data-drawer>
+    <div class="an-drawer-head"><h3 data-drawer-title>Sessions</h3><button type="button" class="ghost-btn" data-drawer-close>Close</button></div>
+    <div data-drawer-body></div>
+  </dialog>
+</AdminShell>
+
+<style>
+  /* Wider than the other admin pages: dashboards need the room. */
+  :global(.wrap.admin:has(.an)) { max-width: 1240px; }
+  .an {
+    /* Chart roles. Categorical slots validated (dataviz validate_palette, light, on #fff):
+       coral #C64E2C · blue #2A78D6 · green #2F9E6E · violet #6250D6, all checks pass. */
+    --s1: #c64e2c; --s2: #2a78d6; --s3: #2f9e6e; --s4: #6250d6;
+    /* Sequential coral ramp (light → dark) for magnitude (heatmap). */
+    --seq-0: #f4f5f4; --seq-1: #fdeee8; --seq-2: #fbd3c6; --seq-3: #f8a98f; --seq-4: #e8704f; --seq-5: #b04524;
+    --grid: #eceeed; --muted: var(--fg-3);
+    --good: #2f7d5b; --warn: #b7791f; --bad: #b04524;
+    margin-top: 8px;
+  }
+  .an-filters { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin: 8px 0 14px; }
+  .an-sel { display: inline-flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--fg-3); }
+  .an-sel select { width: auto; min-width: 110px; padding: 7px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); font: inherit; color: var(--fg); }
+  .an-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; overflow-x: auto; }
+  .an-tabs button { border: 0; background: none; font: inherit; font-weight: 600; color: var(--fg-3); padding: 10px 14px; border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap; }
+  .an-tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--action); }
+  .an-note { color: var(--fg-3); font-size: .85rem; margin: 0 0 12px; }
+
+  :global(.an-grid2) { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  :global(.an-grid3) { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 920px) { :global(.an-grid2), :global(.an-grid3) { grid-template-columns: 1fr; } }
+  :global(.an-card) { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 20px; margin-bottom: 16px; min-width: 0; }
+  :global(.an-card h3) { font-size: 1.02rem; margin: 0 0 2px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  :global(.an-card .an-sub) { color: var(--fg-3); font-size: .82rem; margin: 0 0 12px; }
+  :global(.an-i) { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface); color: var(--fg-3); font: 600 11px/16px var(--font); cursor: help; padding: 0; }
+  :global(.an-n) { font-size: .72rem; font-weight: 600; color: var(--fg-3); background: var(--ink-100); border-radius: 999px; padding: 2px 8px; }
+  :global(.an-n.low) { color: #7a4b00; background: #faf0de; }
+  :global(.an-empty) { color: var(--fg-3); font-size: .9rem; padding: 10px 0; }
+  :global(.an-empty b) { color: var(--fg-2); }
+
+  /* KPI tiles */
+  :global(.an-kpis) { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 1000px) { :global(.an-kpis) { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 600px) { :global(.an-kpis) { grid-template-columns: repeat(2, 1fr); } }
+  :global(.an-kpi) { background: var(--surface); border-radius: 14px; box-shadow: var(--shadow); padding: 14px 16px; min-width: 0; }
+  :global(.an-kpi span) { display: flex; align-items: center; gap: 6px; font-size: .78rem; color: var(--fg-3); }
+  :global(.an-kpi strong) { display: block; font-size: 1.7rem; font-weight: 700; letter-spacing: -0.02em; margin: 4px 0 2px; font-variant-numeric: tabular-nums; }
+  :global(.an-kpi small) { font-size: .78rem; font-weight: 600; }
+  :global(.an-up) { color: var(--good); } :global(.an-down) { color: var(--bad); } :global(.an-flat) { color: var(--fg-3); }
+  :global(.an-hero) { font-size: 3.2rem !important; }
+
+  /* Charts */
+  :global(.an-chart) { width: 100%; height: auto; overflow: visible; }
+  :global(.an-grid) { stroke: var(--grid); stroke-width: 1; }
+  :global(.an-axis) { fill: var(--fg-3); font: 500 11px var(--font); }
+  :global(.an-val) { fill: var(--fg-2); font: 600 11px var(--font); }
+  :global(.an-cross) { stroke: var(--ink-200); stroke-width: 1; }
+  :global(.an-marker line) { stroke: var(--fg-3); stroke-width: 1; }
+  :global(.an-marker circle) { fill: var(--fg-2); stroke: var(--surface); stroke-width: 2; cursor: help; }
+  :global(.an-marker.note circle) { fill: var(--s4); }
+  :global(.an-quad) { fill: var(--fg-3); font: 600 11px var(--font); }
+  :global(.an-quad-bad) { fill: #fdeee8; opacity: .55; }
+  :global(.an-click) { cursor: pointer; }
+  :global(.an-legend) { display: flex; gap: 16px; flex-wrap: wrap; font-size: .8rem; color: var(--fg-2); margin: 6px 0 0; }
+  :global(.an-legend i) { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+  :global(.an-tip) { position: absolute; z-index: 50; display: none; pointer-events: none; background: #292b2c; color: #fff; border-radius: 10px; padding: 8px 10px; font: 500 12px/1.45 var(--font); box-shadow: 0 6px 20px rgba(0,0,0,.18); max-width: 300px; }
+  :global(.an-tip-head) { font-weight: 700; margin-bottom: 2px; }
+  :global(.an-tip-row) { display: flex; justify-content: space-between; gap: 14px; }
+  :global(.an-tip-row b) { font-variant-numeric: tabular-nums; }
+
+  /* Horizontal bars */
+  :global(.an-hbars) { display: grid; gap: 2px; }
+  :global(.an-hrow) { display: grid; grid-template-columns: minmax(130px, 38%) 1fr auto; align-items: center; gap: 12px; padding: 6px 4px; font: inherit; font-size: .88rem; border: 0; background: none; text-align: left; color: var(--fg); border-radius: 8px; }
+  :global(button.an-hrow) { cursor: pointer; } :global(button.an-hrow:hover) { background: var(--ink-100); }
+  :global(.an-hlabel) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :global(.an-hlabel small) { display: block; color: var(--fg-3); font-size: .75rem; }
+  :global(.an-htrack) { height: 8px; background: var(--ink-100); border-radius: 4px; overflow: hidden; }
+  :global(.an-hfill) { display: block; height: 100%; background: var(--s1); border-radius: 0 4px 4px 0; }
+  :global(.an-hrow b) { font-variant-numeric: tabular-nums; font-size: .88rem; }
+  :global(.an-hrow b small) { color: var(--fg-3); font-weight: 500; }
+
+  /* Funnel */
+  :global(.an-funnel) { display: grid; gap: 4px; }
+  :global(.an-fstep) { display: grid; grid-template-columns: minmax(120px, 22%) 1fr 56px 120px 56px 70px; align-items: center; gap: 10px; padding: 5px 4px; border: 0; background: none; font: inherit; font-size: .86rem; text-align: left; color: var(--fg); border-radius: 8px; }
+  :global(button.an-fstep) { cursor: pointer; } :global(button.an-fstep:hover) { background: var(--ink-100); }
+  :global(.an-fname) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :global(.an-fbar) { height: 14px; background: var(--ink-100); border-radius: 4px; overflow: hidden; }
+  :global(.an-ffill) { display: block; height: 100%; background: var(--s1); border-radius: 0 4px 4px 0; }
+  :global(.an-fstep b) { text-align: right; font-variant-numeric: tabular-nums; }
+  :global(.an-fstep small) { color: var(--fg-3); font-size: .76rem; }
+  :global(.an-fdrop) { color: var(--bad); font-size: .78rem; font-weight: 600; text-align: right; }
+  :global(.an-fmed) { color: var(--fg-3); font-size: .78rem; text-align: right; }
+
+  /* Heatmap */
+  :global(.an-heat) { width: 100%; border-collapse: separate; border-spacing: 2px; font-size: .82rem; }
+  :global(.an-heat th) { color: var(--fg-3); font-weight: 600; text-align: left; padding: 4px 6px; white-space: nowrap; }
+  :global(.an-heat td) { text-align: center; padding: 8px 4px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+  :global(.an-heat-n) { color: var(--fg-2); background: none; }
+  :global(.an-heat-na) { color: var(--ink-200); }
+  :global(.an-heat-0) { background: var(--seq-0); color: var(--fg-3); }
+  :global(.an-heat-1) { background: var(--seq-1); }
+  :global(.an-heat-2) { background: var(--seq-2); }
+  :global(.an-heat-3) { background: var(--seq-3); }
+  :global(.an-heat-4) { background: var(--seq-4); color: #fff; }
+  :global(.an-heat-5) { background: var(--seq-5); color: #fff; }
+
+  /* Friction list */
+  :global(.an-issue) { display: grid; grid-template-columns: 44px 1fr auto; gap: 14px; align-items: center; padding: 12px 6px; border-top: 1px solid var(--ink-100); }
+  :global(.an-issue:first-child) { border-top: 0; }
+  :global(.an-score) { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-weight: 800; font-size: 1rem; }
+  :global(.an-score.hi) { background: #fdeee8; color: var(--bad); } :global(.an-score.mid) { background: #faf0de; color: #7a4b00; } :global(.an-score.lo) { background: var(--ink-100); color: var(--fg-2); }
+  :global(.an-parts) { display: flex; height: 8px; border-radius: 4px; overflow: hidden; gap: 2px; margin-top: 6px; max-width: 420px; }
+  :global(.an-parts span) { display: block; height: 100%; }
+  :global(.an-issue small) { color: var(--fg-3); }
+
+  /* Tables */
+  :global(.an-table) { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  :global(.an-table th) { text-align: left; color: var(--fg-3); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; cursor: pointer; }
+  :global(.an-table td) { padding: 8px 10px; border-bottom: 1px solid var(--ink-100); font-variant-numeric: tabular-nums; }
+  :global(.an-table td:first-child) { font-weight: 600; }
+  :global(.an-scroll) { overflow-x: auto; }
+  :global(.an-flag) { display: inline-block; font-size: .72rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; }
+  :global(.an-flag.bad) { background: #fdeee8; color: var(--bad); } :global(.an-flag.warn) { background: #faf0de; color: #7a4b00; }
+
+  /* Drawer */
+  .an-drawer { border: 0; border-radius: 18px; padding: 0; width: min(760px, 94vw); max-height: 86vh; box-shadow: 0 24px 80px rgba(0,0,0,.25); }
+  .an-drawer::backdrop { background: rgba(0,0,0,.35); }
+  .an-drawer-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); }
+  .an-drawer-head h3 { margin: 0; }
+  :global(.an-drawer [data-drawer-body]) { padding: 12px 20px 20px; }
+  :global(.an-tl) { display: grid; grid-template-columns: 70px 16px 1fr; gap: 0 10px; font-size: .84rem; }
+  :global(.an-tl time) { color: var(--fg-3); font-variant-numeric: tabular-nums; padding: 6px 0; }
+  :global(.an-tl i) { display: block; width: 10px; height: 10px; border-radius: 50%; margin: 10px auto 0; background: var(--ink-200); }
+  :global(.an-tl i.flow) { background: var(--s2); } :global(.an-tl i.bad) { background: var(--bad); } :global(.an-tl i.done) { background: var(--good); }
+  :global(.an-tl div) { padding: 6px 0; border-bottom: 1px solid var(--ink-100); }
+  :global(.an-tl small) { color: var(--fg-3); }
+  :global(.an-notes form) { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  :global(.an-notes input) { padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); font: inherit; }
+  :global(.an-notes input[type="text"]) { flex: 1; min-width: 200px; }
+</style>
+
+<script>
+  import type { SupabaseClient } from '@supabase/supabase-js';
+  import { el, initAdmin, showError } from '../../lib/admin';
+  import { lineChart, columns, hbars, funnel, heatmap, scatter, stepFlow, nf, dur, showTip, hideTip } from '../../lib/charts';
+
+  const q = <T extends Element = HTMLElement>(s: string) => document.querySelector(s) as T;
+  let sb: SupabaseClient;
+  let days = 30;
+  let tab = (location.hash.slice(1) || 'overview') as string;
+  let flowPick = 'onboard';
+  const filter: Record<string, string> = {};
+  const MIN_N = 20;
+
+  // ── definitions (concept §3), shown in (i) ──
+  const DEF: Record<string, string> = {
+    users: 'People with at least one session in the period (signed in; bots left out).',
+    sessions: 'Uninterrupted use: a session ends after 30 minutes away. Duration = time on screen, background not counted.',
+    spu: 'Sessions divided by people in the period.',
+    median_session: 'The typical session: half are shorter, half longer (median). p90 = 9 in 10 are shorter.',
+    new_users: 'Accounts created in the period.',
+    mau: 'People with a session in the last 30 days before the period ends. Stickiness = average daily active / monthly active.',
+    retention: 'Of the people who signed up in a week: who was active again on day 1, in days 7–13, 14–29, 30–59 (from the daily activity ping, also older app builds). "·" = not reached yet.',
+    funnel: 'People (devices before sign-up) who reached each onboarding step in the period, in the order of the flow. The drop is how many fewer reached the next step.',
+    aha: 'Aha 1 "arrived": the skill chart was reached. Aha 2 "activated": the first jump or tunnel session in the logbook (logged or imported). Time from sign-up.',
+    groups: 'People who signed up in the period, grouped by the aha moments reached, and how many were active again in days 7–13 and 30–59.',
+    flow: 'A flow run starts with its first screen and ends completed (the goal was reached) or left (back, closed, app to the background, other). Conversion = completed / started.',
+    steps: 'Runs that reached each step, how many left there, and the time spent in it (median, p90).',
+    resumed: 'Runs that were left and then completed by the same person in another session within 7 days.',
+    paths: 'How people actually move between steps. Forward links in coral, loops back in blue. Width = how often.',
+    matrix: 'Each dot is a screen: typical time on it (median) vs. how often a session ended there (exit rate). Long + often the last = likely friction; long + rarely the last = engagement.',
+    screens: 'Views (screen opened and left), median and p90 time, exit rate (last screen of the session), quick back (left with Back in under 3 s: wrong expectation), load p90 (until the skeleton is gone).',
+    friction: 'Score 0–100 per screen from seven signals, each scaled to the worst screen: drop-off 25, errors 20, rage taps 15, quick back 15, hesitation 10, slow (p90 vs median time) 10, load time 5. Grey = fewer than 20 views, not reliable.',
+    ui: 'How often a named control was used. Compared with the views of its screen, rarely used controls are candidates to move, rename or drop.',
+    compare: 'Sessions per release (OTA update or build): typical length, errors per session, sessions with a crash, flow completion.',
+  };
+  const info = (k: string) => {
+    const b = el('button', { type: 'button', class: 'an-i', 'aria-label': `What is this? ${DEF[k] ?? ''}` }, 'i');
+    b.addEventListener('mouseenter', (e) => showTip(e, ['Definition', DEF[k] ?? '']));
+    b.addEventListener('focus', () => { const r = b.getBoundingClientRect(); showTip({ clientX: r.right, clientY: r.top }, ['Definition', DEF[k] ?? '']); });
+    b.addEventListener('mouseleave', hideTip); b.addEventListener('blur', hideTip);
+    return b;
+  };
+  const nBadge = (n: number, what = 'n') => el('span', { class: `an-n${n < MIN_N ? ' low' : ''}`, title: n < MIN_N ? 'Few cases: read as a hint, not a result.' : '' }, `${what} ${nf(n)}${n < MIN_N ? ' · few' : ''}`);
+  function card(title: string, sub: string, def: string | null, n: number | null, ...body: (Node | null)[]) {
+    return el('section', { class: 'an-card' },
+      el('h3', {}, title, def ? info(def) : null, n == null ? null : nBadge(n)),
+      sub ? el('p', { class: 'an-sub' }, sub) : null, ...body);
+  }
+  const empty = (what: string, why: string) => el('p', { class: 'an-empty' }, el('b', {}, what), ` ${why}`);
+  const range = () => { const to = new Date(); const from = new Date(to.getTime() - days * 86400000); return { p_from: from.toISOString(), p_to: to.toISOString(), p_filter: filterJson() }; };
+  function filterJson() {
+    const f: Record<string, unknown> = {};
+    if (filter.platform) f.platform = filter.platform;
+    if (filter.version) f.version = filter.version;
+    if (filter.audience) f.audience = filter.audience;
+    if (filter.premium) f.premium = filter.premium === 'true';
+    return f;
+  }
+  const view = () => q('[data-an-view]');
+  const SCREEN: Record<string, string> = { '/': 'Home', '/map': 'Map', '/logbook': 'Logbook', '/profile': 'Profile', '/log-jump': 'Log a jump', '/settings': 'Settings' };
+  const screenName = (p: string) => {
+    const [base, ov] = p.split('#');
+    const b = SCREEN[base] ?? base.replace(/^\//, '').replace(/[-/]/g, ' ').replace(/^./, (c) => c.toUpperCase());
+    return ov ? `${b} › ${ov.replace(/_/g, ' ')}` : b;
+  };
+  const stepName = (s: string) => s.replace(/^skill_/, 'skill · ').replace(/^about_/, 'about · ').replace(/_/g, ' ');
+  const delta = (now: number | null | undefined, before: number | null | undefined, goodUp = true) => {
+    if (now == null || before == null || before === 0) return el('small', { class: 'an-flat' }, 'no earlier period');
+    const d = ((now - before) / before) * 100;
+    if (Math.abs(d) < 1) return el('small', { class: 'an-flat' }, '±0 % vs before');
+    const up = d > 0;
+    return el('small', { class: up === goodUp ? 'an-up' : 'an-down' }, `${up ? '▲' : '▼'} ${nf(Math.abs(d))} % vs before`);
+  };
+  const kpi = (label: string, value: string, def: string, d?: Node, hero = false) =>
+    el('div', { class: 'an-kpi' }, el('span', {}, label, info(def)), el('strong', { class: hero ? 'an-hero' : '' }, value), d ?? null);
+
+  async function rpc<T>(name: string, args: Record<string, unknown>): Promise<T | null> {
+    const { data, error } = await sb.rpc(name, args);
+    if (error) {
+      view().replaceChildren(el('section', { class: 'an-card' }, empty('Couldn\'t load this view.', error.message.includes(name) ? 'It needs migration 0160 on this database.' : error.message)));
+      return null;
+    }
+    return data as T;
+  }
+
+  // ── Overview ──────────────────────────────────────────────────────
+  async function overview() {
+    const d = await rpc<any>('admin_an_overview', range());
+    if (!d) return;
+    fillVersions(d.versions);
+    const t = d.totals, p = d.previous;
+    const daily = d.daily as any[];
+    const iso = daily.map((x) => String(x.day).slice(0, 10));
+    const labels = iso.map((s) => new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }));
+    const markers = [...(d.markers ?? []).map((m: any) => ({ at: m.at, label: `${m.label}${m.note ? ` · ${m.note}` : ''}`, kind: m.kind })),
+      ...(d.notes ?? []).map((n: any) => ({ at: String(n.at), label: n.text, kind: 'note' }))];
+    const avgDau = daily.length ? daily.reduce((a, x) => a + x.dau, 0) / daily.length : 0;
+    const kpis = el('div', { class: 'an-kpis' },
+      kpi('Active people', nf(t.users), 'users', delta(t.users, p.users), true),
+      kpi('New accounts', nf(t.new_users), 'new_users', delta(t.new_users, p.new_users)),
+      kpi('Sessions', nf(t.sessions), 'sessions', delta(t.sessions, p.sessions)),
+      kpi('Sessions per person', nf(t.sessions_per_user, 1), 'spu', delta(t.sessions_per_user, p.sessions_per_user)),
+      kpi('Typical session', dur(t.median_session_s), 'median_session', el('small', { class: 'an-flat' }, `p90 ${dur(t.p90_session_s)}`)),
+      kpi('Monthly active', nf(d.mau), 'mau', el('small', { class: 'an-flat' }, `stickiness ${d.mau ? nf((avgDau / d.mau) * 100) : '–'} %`)));
+
+    // What changed most vs the period before (n ≥ 20 only).
+    const changes = [
+      ['Active people', t.users, p.users, true], ['Sessions', t.sessions, p.sessions, true], ['New accounts', t.new_users, p.new_users, true],
+      ['Sessions per person', t.sessions_per_user, p.sessions_per_user, true], ['Typical session', t.median_session_s, p.median_session_s, true],
+    ].filter(([, a, b]) => a != null && b && (b as number) >= 5)
+      .map(([l, a, b, g]) => ({ l: l as string, d: (((a as number) - (b as number)) / (b as number)) * 100, g: g as boolean, a: a as number, b: b as number }))
+      .sort((x, y) => Math.abs(y.d) - Math.abs(x.d)).slice(0, 5);
+
+    const usage = card('Are people using Arc, and how many come back?', 'Daily active people, 7-day active people and new accounts. Flags = releases and your notes.', 'users', t.users,
+      daily.length ? lineChart({ labels, iso, markers, series: [
+        { name: '7-day active', color: 'var(--s2)', values: daily.map((x) => x.wau) },
+        { name: 'Daily active', color: 'var(--s1)', values: daily.map((x) => x.dau), area: true },
+        { name: 'New accounts', color: 'var(--s3)', values: daily.map((x) => x.new_users) },
+      ], tipLabel: (i) => new Date(iso[i]).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) }) : empty('No days yet.', ''),
+      el('div', { class: 'an-legend' }, el('span', {}, el('i', { style: 'background:var(--s1)' }), 'Daily active'), el('span', {}, el('i', { style: 'background:var(--s2)' }), '7-day active'), el('span', {}, el('i', { style: 'background:var(--s3)' }), 'New accounts')));
+
+    const mix = card('New or returning?', 'People per day: accounts younger than 7 days vs. older.', null, null,
+      lineChart({ labels, iso, height: 170, series: [
+        { name: 'Returning', color: 'var(--s2)', values: daily.map((x) => x.returning_people) },
+        { name: 'New', color: 'var(--s3)', values: daily.map((x) => x.new_people) },
+      ] }),
+      el('div', { class: 'an-legend' }, el('span', {}, el('i', { style: 'background:var(--s2)' }), 'Returning'), el('span', {}, el('i', { style: 'background:var(--s3)' }), 'New')));
+
+    const buckets = ['<30 s', '30–60 s', '1–3 min', '3–10 min', '10–30 min', '30+ min'];
+    const hist = card('How long is a session?', 'Sessions by time on screen. The typical one is in the middle, not the average.', 'median_session', t.sessions,
+      t.sessions ? columns({ items: buckets.map((b) => ({ label: b, value: d.session_hist?.[b] ?? 0 })) }) : empty('No sessions in this period.', 'Usage events arrive from the app update of 12 Nov 2026 on.'));
+
+    const cols = ['Day 1', 'Days 7–13', 'Days 14–29', 'Days 30–59'];
+    const ret = (d.retention as any[]).filter((r) => r.n > 0);
+    const heat = card('Do they come back?', 'Weekly sign-up cohorts, share active again. Darker = more.', 'retention', ret.reduce((a, r) => a + r.n, 0),
+      ret.length ? el('div', { class: 'an-scroll' }, heatmap(ret.slice().reverse().map((r) => ({
+        label: new Date(r.cohort).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), n: r.n,
+        cells: [[r.d1, r.e1], [r.d7, r.e7], [r.d14, r.e14], [r.d30, r.e30]].map(([v, e]) => (e ? Math.round((v / e) * 100) : null)),
+        ns: [r.e1, r.e7, r.e14, r.e30],
+      })), cols)) : empty('No sign-ups in the last 12 weeks.', ''));
+
+    const anomalies = card('What changed most?', `This period vs. the ${days} days before. Only measures with at least 5 before.`, null, null,
+      changes.length ? hbars(changes.map((c) => ({ label: c.l, value: Math.abs(c.d), sub: `${nf(c.b, 1)} → ${nf(c.a, 1)}`, color: (c.d > 0) === c.g ? 'var(--good)' : 'var(--bad)',
+        tip: [c.l, ['Before', nf(c.b, 1)], ['Now', nf(c.a, 1)], ['Change', `${c.d > 0 ? '+' : '−'}${nf(Math.abs(c.d))} %`]] })), { fmt: (v) => `${nf(v)} %` })
+        : empty('Nothing to compare yet.', 'Needs at least 5 in the period before.'));
+
+    view().replaceChildren(kpis, usage, el('div', { class: 'an-grid2' }, hist, anomalies), el('div', { class: 'an-grid2' }, heat, mix));
+  }
+
+  // ── Onboarding ────────────────────────────────────────────────────
+  const ONBOARD_ORDER = ['welcome', 'register', 'login', 'social', 'verify_email', 'terms', 'about_intro', 'about_name', 'about_licence', 'about_units', 'about_weight', 'about_jumps',
+    'skill_intro', 'skill_interests', 'skill_overview', 'skill_chart', 'docs', 'done'];
+  async function onboarding() {
+    const d = await rpc<any>('admin_an_onboarding', range());
+    if (!d) return;
+    const steps = (d.steps as any[]);
+    const byStep = new Map(steps.map((s) => [s.step, s]));
+    const leftBy = new Map<string, number>();
+    for (const l of d.left as any[]) leftBy.set(l.step, (leftBy.get(l.step) ?? 0) + l.people);
+    const ordered = [...ONBOARD_ORDER.filter((s) => byStep.has(s)), ...steps.map((s) => s.step).filter((s) => !ONBOARD_ORDER.includes(s)).sort()];
+    const fun = card('Where do new people drop off before they arrive?', 'Onboarding steps in order. Click a step for the sessions that left there.', 'funnel', d.started ?? 0,
+      ordered.length ? funnel(ordered.map((s) => ({ label: stepName(s), value: byStep.get(s).people, median: dur(byStep.get(s).median_s), left: leftBy.get(s),
+        onClick: () => openSessions('onboard', s, `Left onboarding at "${stepName(s)}"`) })))
+        : empty('No onboarding runs yet.', 'They arrive from the app update of 12 Nov 2026 on (welcome and sign-up are counted anonymously until the account exists).'));
+    const tv = d.ttv ?? {};
+    const aha = card('How fast do they get value?', 'Aha 1: skill chart reached. Aha 2: first logbook entry. Of the people who signed up in the period.', 'aha', tv.signups ?? 0,
+      el('div', { class: 'an-kpis', style: 'grid-template-columns:repeat(3,1fr)' },
+        kpi('Reached the chart', tv.signups ? `${nf((tv.chart_n / tv.signups) * 100)} %` : '–', 'aha', el('small', { class: 'an-flat' }, `typical ${tv.chart_median_min != null ? dur(tv.chart_median_min * 60) : '–'}`)),
+        kpi('First log entry', tv.signups ? `${nf((tv.log_n / tv.signups) * 100)} %` : '–', 'aha', el('small', { class: 'an-flat' }, `typical ${tv.log_median_h != null ? dur(tv.log_median_h * 3600) : '–'} · p90 ${tv.log_p90_h != null ? dur(tv.log_p90_h * 3600) : '–'}`)),
+        kpi('First friend', tv.signups ? `${nf((tv.friend_n / tv.signups) * 100)} %` : '–', 'aha')),
+      columns({ items: ['< 1 h', '< 1 day', '1–7 days', '7–30 days', '30+ days', 'none yet'].map((b) => ({ label: b, value: d.ttv_hist?.[b] ?? 0 })), highlight: (i) => i < 5, height: 170 }),
+      el('p', { class: 'an-sub' }, 'Time from sign-up to the first logbook entry. Grey: nobody logged anything yet.'));
+    const order = ['both', 'chart only', 'log only', 'neither'];
+    const groups = (d.groups as any[]).sort((a, b) => order.indexOf(a.grp) - order.indexOf(b.grp));
+    const grp = card('Do people who reach the aha moments stay?', 'Active again in days 7–13 (D7) and 30–59 (D30), by what they reached.', 'groups', groups.reduce((a, g) => a + g.n, 0),
+      groups.length ? hbars(groups.flatMap((g) => [
+        { label: `${g.grp} · D7`, sub: `${nf(g.n)} people`, value: g.e7 ? Math.round((g.d7 / g.e7) * 100) : 0, color: 'var(--s2)', tip: [`${g.grp}`, ['People', nf(g.n)], ['Back in days 7–13', `${nf(g.d7)} of ${nf(g.e7)}`]] },
+        { label: `${g.grp} · D30`, value: g.e30 ? Math.round((g.d30 / g.e30) * 100) : 0, color: 'var(--s4)', tip: [`${g.grp}`, ['Back in days 30–59', `${nf(g.d30)} of ${nf(g.e30)}`]] },
+      ]), { fmt: (v) => `${nf(v)} %` }) : empty('No sign-ups in this period.', ''));
+    const skips = card('Which optional steps are skipped?', 'Skip / later buttons in onboarding, by people.', null, null,
+      (d.skips as any[]).length ? hbars((d.skips as any[]).sort((a, b) => b.people - a.people).map((k) => ({ label: k.el.replace('onboard.', '').replace(/_/g, ' '), value: k.people, of: d.started || undefined })), { pct: !!d.started })
+        : empty('Nothing skipped yet.', ''));
+    view().replaceChildren(fun, el('div', { class: 'an-grid2' }, aha, grp), skips);
+  }
+
+  // ── Flows ─────────────────────────────────────────────────────────
+  const FLOW_NAME: Record<string, string> = {
+    onboard: 'Onboarding', skill_assess: 'Skill re-assessment', log_jump: 'Log a jump', log_tunnel: 'Log a tunnel session', backfill: 'Add an old jump',
+    import_scan: 'Import: scan pages', import_file: 'Import: file', import_draft: 'Import: continue draft', sign_request: 'Request a signature', sign: 'Sign a friend\'s jump',
+    sign_hand: 'Sign by hand', add_friend: 'Add a friend', post: 'Share a post', event_create: 'Create an event', event_join: 'Join an event', place_review: 'Review a place',
+    place_edit: 'Suggest a place edit', gear_add: 'Add a rig', doc_scan: 'Scan a document', premium: 'Premium', export: 'Export logbook', delete_account: 'Delete account',
+  };
+  async function flows() {
+    const d = await rpc<any>('admin_an_flows', { ...range(), p_flow: flowPick });
+    if (!d) return;
+    const summary = (d.summary as any[]);
+    const list = card('Which flows work, which don\'t?', 'Completion of every flow. Click one to see its steps.', 'flow', summary.reduce((a, s) => a + s.started, 0),
+      summary.length ? hbars(summary.map((s) => ({ label: FLOW_NAME[s.flow] ?? s.flow, sub: `${nf(s.started)} started · typical ${dur(s.median_s)}`,
+        value: s.started ? Math.round((s.completed / s.started) * 100) : 0, color: s.flow === flowPick ? 'var(--s1)' : 'var(--s2)',
+        tip: [FLOW_NAME[s.flow] ?? s.flow, ['Started', nf(s.started)], ['Completed', nf(s.completed)], ['Left', nf(s.left_)], ['Typical time', dur(s.median_s)], ['p90', dur(s.p90_s)], ['People', nf(s.people)]],
+        onClick: () => { flowPick = s.flow; flows(); } })), { fmt: (v) => `${nf(v)} %` })
+        : empty('No flow runs yet.', 'They arrive from the app update of 12 Nov 2026 on.'));
+    const steps = d.steps as any[];
+    const name = FLOW_NAME[flowPick] ?? flowPick;
+    const fun = card(`${name}: where does it break?`, 'Runs per step, the drop to the next, and typical time in the step. Click a step for the sessions that left there.', 'steps', d.instances ?? 0,
+      steps.length ? funnel(steps.map((s) => ({ label: stepName(s.step), value: s.reached, median: dur(s.median_s), left: s.left, onClick: () => openSessions(flowPick, s.step, `${name}: left at "${stepName(s.step)}"`) })))
+        : empty('No steps recorded for this flow yet.', ''));
+    const ex = d.exits ?? {};
+    const EXIT: Record<string, string> = { back: 'Went back', close: 'Closed it', background: 'Left the app', other: 'Opened something else', finish_later: 'Finish later / draft', skipped: 'Skipped' };
+    const exitTotal = Object.values(ex).reduce((a: number, v: any) => a + v, 0) as number;
+    const exits = card('Where do they go when they leave?', 'How the runs that were not completed ended.', 'flow', exitTotal,
+      exitTotal ? hbars(Object.entries(ex).sort((a: any, b: any) => b[1] - a[1]).map(([k, v]: any) => ({ label: EXIT[k] ?? k, value: v, of: exitTotal })), { pct: true }) : empty('Nobody left this flow.', ''));
+    const r = d.resumed ?? {};
+    const res = card('Do interrupted runs get finished later?', 'Left, then completed by the same person in another session (≤ 7 days).', 'resumed', r.left_total ?? 0,
+      el('div', { class: 'an-kpis', style: 'grid-template-columns:repeat(2,1fr)' },
+        kpi('Finished later', r.left_total ? `${nf((r.resumed / r.left_total) * 100)} %` : '–', 'resumed', el('small', { class: 'an-flat' }, `${nf(r.resumed)} of ${nf(r.left_total)}`)),
+        kpi('Typical gap', r.median_gap_h != null ? dur(r.median_gap_h * 3600) : '–', 'resumed')));
+    const paths = card(`${name}: the paths people really take`, 'Step to next step. Coral = forward, blue = back to an earlier step (loops).', 'paths', null,
+      (d.links as any[]).length ? stepFlow(steps.map((s) => s.step), d.links) : empty('No paths yet.', ''));
+    view().replaceChildren(list, fun, el('div', { class: 'an-grid2' }, exits, res), paths);
+  }
+
+  // ── Screens ───────────────────────────────────────────────────────
+  let sortKey = 'views';
+  async function screens() {
+    const d = await rpc<any>('admin_an_screens', range());
+    if (!d) return;
+    const rows = (d.screens as any[]);
+    const views = rows.reduce((a, r) => a + r.views, 0);
+    const medTime = rows.length ? [...rows].sort((a, b) => a.median_s - b.median_s)[Math.floor(rows.length / 2)].median_s : 0;
+    const mat = card('Where is time well spent, where is it a struggle?', 'Each dot a screen (size = views). Top right: long and often the last screen of a session.', 'matrix', views,
+      rows.length ? scatter(rows.filter((r) => r.views >= 3).map((r) => ({ label: screenName(r.screen), x: Number(r.median_s), y: Number(r.exit_pct), size: r.views, color: r.views < MIN_N ? 'var(--ink-200)' : 'var(--s2)', onClick: () => openScreen(r) })),
+        { xLabel: 'Typical time on screen (s)', yLabel: 'Exit rate (%)', xMid: medTime, yMid: 20, quads: ['Struggle?', 'Lost interest?', 'Quick tasks', 'Engagement'], xFmt: (v) => nf(v, 0), yFmt: (v) => `${nf(v)} %` })
+        : empty('No screen views yet.', ''));
+    const cols: [string, string, (r: any) => string][] = [
+      ['screen', 'Screen', (r) => screenName(r.screen)], ['views', 'Views', (r) => nf(r.views)], ['users', 'People', (r) => nf(r.users)],
+      ['median_s', 'Typical', (r) => dur(r.median_s)], ['p90_s', 'p90', (r) => dur(r.p90_s)], ['exit_pct', 'Exit', (r) => `${nf(r.exit_pct)} %`],
+      ['back_fast_pct', 'Quick back', (r) => `${nf(r.back_fast_pct)} %`], ['load_p90_ms', 'Load p90', (r) => (r.load_p90_ms != null ? `${nf(r.load_p90_ms / 1000, 1)} s` : '–')],
+      ['errors', 'Errors', (r) => nf(r.errors)], ['rage', 'Rage taps', (r) => nf(r.rage)],
+    ];
+    const sorted = [...rows].sort((a, b) => (sortKey === 'screen' ? String(a.screen).localeCompare(b.screen) : (Number(b[sortKey]) || 0) - (Number(a[sortKey]) || 0)));
+    const table = el('table', { class: 'an-table' },
+      el('thead', {}, el('tr', {}, ...cols.map(([k, h]) => el('th', { onclick: () => { sortKey = k; screens(); }, 'aria-sort': sortKey === k ? 'descending' : 'none' }, h + (sortKey === k ? ' ↓' : ''))))),
+      el('tbody', {}, ...sorted.map((r) => el('tr', {}, ...cols.map(([, , f], i) => el('td', {}, f(r), i === 0 && r.views < MIN_N ? el('span', { class: 'an-n low', style: 'margin-left:6px' }, 'few') : null))))));
+    const tbl = card('All screens', 'Click a column to sort. Overlays (search, panels, pickers) appear as "Screen › overlay".', 'screens', views, rows.length ? el('div', { class: 'an-scroll' }, table) : empty('No screen views yet.', ''));
+    const ui = (d.ui as any[]);
+    const viewsOf = (prefix: string) => rows.filter((r) => screenName(r.screen).toLowerCase().replace(/ /g, '_').startsWith(prefix)).reduce((a, r) => a + r.views, 0);
+    const uiCard = card('What gets used, what doesn\'t?', 'Named controls by use. Rarely used ones are candidates to move, rename or drop.', 'ui', ui.reduce((a, u) => a + u.times, 0),
+      ui.length ? hbars(ui.slice(0, 30).map((u) => ({ label: u.el.replace('.', ' › ').replace(/_/g, ' '), value: u.times, sub: `${nf(u.users)} people`, tip: [u.el, ['Used', nf(u.times)], ['People', nf(u.users)], ['Views of its screen', nf(viewsOf(u.el.split('.')[0]))]] })))
+        : empty('No control usage yet.', 'It arrives from the app update of 12 Nov 2026 on.'));
+    view().replaceChildren(mat, tbl, uiCard);
+  }
+  function openScreen(r: any) {
+    openDrawer(screenName(r.screen), el('div', {},
+      hbars([
+        { label: 'Views', value: r.views }, { label: 'People', value: r.users },
+        { label: 'Exit rate', value: Number(r.exit_pct), of: 100 }, { label: 'Quick back', value: Number(r.back_fast_pct), of: 100 },
+        { label: 'Errors', value: r.errors }, { label: 'Rage taps', value: r.rage }, { label: 'Crashes', value: r.crashes },
+      ], { fmt: (v) => nf(v, 1) }),
+      el('p', { class: 'an-sub' }, `Typical time ${dur(r.median_s)} · p90 ${dur(r.p90_s)} · load p90 ${r.load_p90_ms != null ? `${nf(r.load_p90_ms / 1000, 1)} s` : '–'}`)));
+  }
+
+  // ── Friction ──────────────────────────────────────────────────────
+  const PARTS: [string, string, string][] = [['drop', 'Drop-off', 'var(--s1)'], ['errors', 'Errors', 'var(--bad)'], ['rage', 'Rage taps', 'var(--s4)'], ['back', 'Quick back', 'var(--s2)'],
+    ['hesitate', 'Hesitation', 'var(--warn)'], ['slow', 'Slow (p90)', 'var(--s3)'], ['load', 'Load time', 'var(--ink-700)']];
+  async function friction() {
+    const d = await rpc<any>('admin_an_friction', range());
+    if (!d) return;
+    const rows = d.screens as any[];
+    const issues = card('Where is it worth working next?', 'Screens by friction score, worst first. The bar shows what the score is made of.', 'friction', rows.reduce((a, r) => a + r.views, 0),
+      rows.length ? el('div', {}, ...rows.slice(0, 12).map((r) => {
+        const parts = el('div', { class: 'an-parts' }, ...PARTS.map(([k, , c]) => { const v = Number(r.parts[k]); return v > 0 ? el('span', { style: `width:${v}%;background:${c}` }) : null; }));
+        const node = el('div', { class: 'an-issue' },
+          el('div', { class: `an-score ${!r.reliable ? 'lo' : r.score >= 50 ? 'hi' : r.score >= 25 ? 'mid' : 'lo'}` }, nf(r.score)),
+          el('div', {}, el('strong', {}, screenName(r.screen)), el('small', {}, `  ${nf(r.views)} views${r.reliable ? '' : ' · few, not reliable'}`), parts),
+          el('small', {}, PARTS.filter(([k]) => Number(r.parts[k]) >= 8).map(([, l]) => l).join(' · ') || 'nothing stands out'));
+        node.addEventListener('mousemove', (e) => showTip(e, [screenName(r.screen), ...PARTS.map(([k, l]): [string, string] => [l, `${nf(Number(r.parts[k]), 1)}`]), ['Errors', nf(r.errors)], ['Rage taps', nf(r.rage)], ['Hesitations', nf(r.hesitations)]]));
+        node.addEventListener('mouseleave', hideTip);
+        return node;
+      }), el('div', { class: 'an-legend' }, ...PARTS.map(([, l, c]) => el('span', {}, el('i', { style: `background:${c};height:8px;width:8px;border-radius:2px` }), l))))
+        : empty('Not enough screen views yet.', 'A screen needs at least 5 views to get a score, 20 to be reliable.'));
+    const list = (title: string, sub: string, rows: any[], label: (r: any) => string, value: (r: any) => number, extra?: (r: any) => string) =>
+      card(title, sub, null, rows.reduce((a, r) => a + value(r), 0), rows.length ? hbars(rows.map((r) => ({ label: label(r), value: value(r), sub: extra?.(r) }))) : empty('None so far.', 'Good, or the update isn\'t on enough phones yet.'));
+    const sl = d.slow_load ?? {};
+    const load = card('Do slow screens lose people?', 'Exit rate of screen views that loaded in more than 2 s vs. 2 s or less.', null, (sl.n_slow ?? 0) + (sl.n_fast ?? 0),
+      (sl.n_slow ?? 0) + (sl.n_fast ?? 0) ? hbars([{ label: 'Loaded in > 2 s', value: Number(sl.exit_pct_slow ?? 0), of: 100, sub: `${nf(sl.n_slow)} views`, color: 'var(--bad)' },
+        { label: 'Loaded in ≤ 2 s', value: Number(sl.exit_pct_fast ?? 0), of: 100, sub: `${nf(sl.n_fast)} views`, color: 'var(--s2)' }], { fmt: (v) => `${nf(v, 1)} %` })
+        : empty('No load times yet.', ''));
+    view().replaceChildren(issues,
+      el('div', { class: 'an-grid2' },
+        list('Which fields cause errors?', 'Validation errors by field (and flow).', d.fields, (r) => r.field, (r) => r.errors, (r) => `${r.flow ?? 'outside a flow'} · ${nf(r.people)} people`),
+        list('Where are forms abandoned?', 'Forms left with input: the last field touched.', d.forms, (r) => `${r.last_field ?? '(none)'}`, (r) => r.times, (r) => FLOW_NAME[r.flow] ?? r.flow ?? '')),
+      el('div', { class: 'an-grid2' },
+        list('Which errors do people see?', 'Error messages shown, by screen.', d.errors, (r) => r.title.replace(/_/g, ' '), (r) => r.times, (r) => screenName(r.screen ?? '')),
+        list('Which requests fail?', 'Failed server calls by table / function and status.', d.requests, (r) => r.op, (r) => r.times, (r) => `status ${r.code ?? '?'}`)),
+      el('div', { class: 'an-grid2' },
+        list('Where do people hesitate?', '20 s or more without a touch in a flow step.', d.hesitations, (r) => `${FLOW_NAME[r.flow] ?? r.flow} › ${stepName(r.step ?? '')}`, (r) => r.times),
+        list('Where does Arc crash?', 'Crash screen shown, by screen. Details in Sentry.', d.crashes, (r) => screenName(r.screen ?? ''), (r) => r.times, (r) => r.name)),
+      el('div', { class: 'an-grid2' }, load,
+        card('Crash details', 'Stack traces, devices and versions.', null, null, el('p', {}, el('a', { href: 'https://arc-4v.sentry.io/issues/', target: '_blank', rel: 'noopener' }, 'Open Sentry →')))));
+  }
+
+  // ── Releases & notes ──────────────────────────────────────────────
+  async function compare() {
+    const [d, notes] = await Promise.all([rpc<any>('admin_an_compare', range()), sb.from('admin_notes').select('*').order('at', { ascending: false }).limit(50)]);
+    if (!d) return;
+    const rel = d.releases as any[];
+    const table = el('table', { class: 'an-table' },
+      el('thead', {}, el('tr', {}, ...['Release', 'First seen', 'Sessions', 'Typical session', 'Errors / session', 'Sessions with a crash', 'Flows completed'].map((h) => el('th', {}, h)))),
+      el('tbody', {}, ...rel.map((r, i) => {
+        const prev = rel[i - 1];
+        const cmp = (a: number | null, b: number | null, goodUp: boolean) => (a == null || b == null || !prev ? '' : a === b ? '' : (a > b) === goodUp ? ' ▲' : ' ▼');
+        return el('tr', {},
+          el('td', {}, r.version ?? '–', r.update_id ? el('small', { style: 'display:block;color:var(--fg-3);font-weight:500' }, `update ${String(r.update_id).slice(0, 8)}`) : null),
+          el('td', {}, r.first_seen ? new Date(r.first_seen).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '–'),
+          el('td', {}, nf(r.sessions), r.sessions < MIN_N ? el('span', { class: 'an-n low', style: 'margin-left:6px' }, 'few') : null),
+          el('td', {}, dur(r.median_session_s) + cmp(r.median_session_s, prev?.median_session_s, true)),
+          el('td', {}, nf(r.errors_per_session, 2) + cmp(r.errors_per_session, prev?.errors_per_session, false)),
+          el('td', {}, nf(r.crash_sessions)),
+          el('td', {}, r.flow_completion_pct != null ? `${nf(r.flow_completion_pct, 1)} %${cmp(r.flow_completion_pct, prev?.flow_completion_pct, true)}` : '–'));
+      })));
+    const relCard = card('What did each release change?', 'Every OTA update and build that sent events, oldest first. ▲▼ = better / worse than the one before.', 'compare', rel.reduce((a, r) => a + r.sessions, 0),
+      rel.length ? el('div', { class: 'an-scroll' }, table) : empty('No releases with events yet.', ''));
+    const form = el('form', {},
+      el('input', { type: 'date', name: 'at', required: true, value: new Date().toISOString().slice(0, 10) }),
+      el('input', { type: 'text', name: 'text', required: true, maxLength: 500, placeholder: 'e.g. Onboarding step 3 rebuilt' }),
+      el('button', { type: 'submit', class: 'primary-btn' }, 'Add note'));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = new FormData(form);
+      const { error } = await sb.from('admin_notes').insert({ at: f.get('at'), text: String(f.get('text')).trim() });
+      if (error) showError(error.message); else compare();
+    });
+    const rows = (notes.data ?? []) as any[];
+    const notesCard = el('section', { class: 'an-card an-notes' }, el('h3', {}, 'Notes'), el('p', { class: 'an-sub' }, 'What you changed and when. Notes show as violet flags in the Overview time series.'),
+      rows.length ? el('div', {}, ...rows.map((n) => el('div', { class: 'an-hrow', style: 'grid-template-columns:110px 1fr auto' },
+        el('span', { class: 'an-hlabel' }, new Date(n.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })), el('span', {}, n.text),
+        el('button', { type: 'button', class: 'ghost-btn', onclick: async () => { await sb.from('admin_notes').delete().eq('id', n.id); compare(); } }, 'Remove'))))
+        : empty('No notes yet.', ''), form);
+    view().replaceChildren(relCard, notesCard);
+  }
+
+  // ── Sessions drawer (drill-down) ─────────────────────────────────
+  function openDrawer(title: string, body: Node) {
+    q('[data-drawer-title]').textContent = title;
+    q('[data-drawer-body]').replaceChildren(body);
+    q<HTMLDialogElement>('[data-drawer]').showModal();
+  }
+  async function openSessions(flow: string, step: string, title: string) {
+    const { data, error } = await sb.rpc('admin_an_sessions', { ...range(), p_flow: flow, p_step: step, p_limit: 40 });
+    if (error) { showError(error.message); return; }
+    const rows = (data ?? []) as any[];
+    openDrawer(title, rows.length ? el('div', {}, el('p', { class: 'an-sub' }, 'Pseudonymous: people as a short code, never a name. Click one for its timeline.'),
+      hbars(rows.map((s) => ({ label: `${new Date(s.started).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · ${s.who}`,
+        sub: `${s.platform ?? ''} ${s.version ?? ''} · ${nf(s.events)} events${s.friction ? ` · ${nf(s.friction)} friction signals` : ''}`, value: Math.round((s.ms ?? 0) / 1000),
+        onClick: () => openTimeline(s.session_id, s.who) })), { fmt: (v) => dur(v) }))
+      : empty('No sessions.', 'Nobody left at this step in the period.'));
+  }
+  async function openTimeline(id: string, who: string) {
+    const { data, error } = await sb.rpc('admin_an_session', { p_session: id });
+    if (error) { showError(error.message); return; }
+    const evs = (data ?? []) as any[];
+    const t0 = evs[0] ? new Date(evs[0].at).getTime() : 0;
+    const kind = (e: any) => (['error_shown', 'request_failed', 'crash', 'rage_taps', 'field_error', 'hesitation'].includes(e.name) ? 'bad'
+      : e.name === 'flow_completed' ? 'done' : e.name.startsWith('flow_') ? 'flow' : '');
+    const text = (e: any) => {
+      const p = e.props ?? {};
+      if (e.name === 'screen_view') return `${screenName(e.screen ?? '')} · ${dur((e.ms ?? 0) / 1000)}${p.exit ? ` · ${p.exit}` : ''}${p.load_ms != null ? ` · load ${nf(p.load_ms / 1000, 1)} s` : ''}`;
+      if (e.name.startsWith('flow_')) return `${e.name.replace('flow_', 'Flow ')}: ${FLOW_NAME[p.flow] ?? p.flow}${p.step ? ` › ${stepName(p.step)}` : ''}${p.to ? ` (${p.to})` : ''}${p.ms ? ` · ${dur(p.ms / 1000)}` : ''}`;
+      return `${e.name.replace(/_/g, ' ')}${Object.keys(p).length ? ` · ${Object.entries(p).filter(([k]) => k !== 'seg').map(([k, v]) => `${k} ${typeof v === 'object' ? '…' : v}`).join(', ')}` : ''}`;
+    };
+    openDrawer(`Session ${who}`, el('div', { class: 'an-tl' }, ...evs.flatMap((e) => [
+      el('time', {}, `+${dur((new Date(e.at).getTime() - t0) / 1000)}`), el('i', { class: kind(e) }), el('div', {}, text(e))])));
+  }
+
+  // ── wiring ────────────────────────────────────────────────────────
+  function fillVersions(vs: string[]) {
+    const sel = q<HTMLSelectElement>('[data-f="version"]');
+    if (sel.options.length > 1) return;
+    for (const v of vs ?? []) sel.append(el('option', { value: v }, v));
+  }
+  const NOTES: Record<string, string> = {
+    overview: 'Bots left out. From the app update of 12 Nov 2026 on, every session carries flows, friction and load times; retention also counts older builds.',
+    onboarding: 'Welcome, sign-up and login are counted anonymously per device until the account exists, then linked to it.',
+    flows: 'A run is one session\'s pass through a flow. Click a flow to change the views below.',
+    screens: 'Overlays such as search, the map panel and pickers count as their own screens.',
+    friction: 'Score per screen; the bar shows its parts. Reliable from 20 views.',
+    compare: 'Release markers come from app_releases (builds and updates); notes are yours.',
+  };
+  async function render() {
+    document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+    document.querySelectorAll<HTMLButtonElement>('[data-days]').forEach((b) => b.setAttribute('aria-checked', String(Number(b.dataset.days) === days)));
+    q('[data-an-note]').textContent = NOTES[tab] ?? '';
+    view().replaceChildren(el('p', { class: 'an-empty' }, 'Loading…'));
+    hideTip();
+    if (tab === 'overview') await overview();
+    else if (tab === 'onboarding') await onboarding();
+    else if (tab === 'flows') await flows();
+    else if (tab === 'screens') await screens();
+    else if (tab === 'friction') await friction();
+    else await compare();
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) => b.addEventListener('click', () => { tab = b.dataset.tab!; history.replaceState(null, '', `#${tab}`); render(); }));
+  document.querySelectorAll<HTMLButtonElement>('[data-days]').forEach((b) => b.addEventListener('click', () => { days = Number(b.dataset.days); render(); }));
+  document.querySelectorAll<HTMLSelectElement>('[data-f]').forEach((s) => s.addEventListener('change', () => { filter[s.dataset.f!] = s.value; render(); }));
+  q('[data-drawer-close]').addEventListener('click', () => q<HTMLDialogElement>('[data-drawer]').close());
+
+  initAdmin(async (client) => { sb = client; await render(); });
+</script>
