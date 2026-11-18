@@ -51,7 +51,7 @@ export const PRIVACY: LegalSection[] = [
     paragraphs: ['We use these providers to run Arc. They process data only for us:'],
     bullets: [
       'Supabase — database, sign-in, file storage and server functions. Servers in Zurich, Switzerland.',
-      'Anthropic (Claude) — reads the logbook pages and documents you scan to fill in the fields. The images are sent only when you scan, and Anthropic doesn\'t use them to train its models. USA.',
+      'Anthropic (Claude) — reads the logbook pages and documents you scan to fill in the fields. In Edit logbook (Premium) it gets what you write, a summary of your logbook and the details of the jumps it looks up to answer you (dropzone, aircraft, canopy, names, notes, who you jumped with), never signatures or licence numbers. Data is sent only when you scan or write, and Anthropic doesn\'t use it to train its models. USA.',
       'Expo — delivers push notifications: your push token and the notification\'s title and text (including message previews). USA.',
       'Apple and Google — push delivery to your phone, and sign-in if you choose it.',
       'Open-Meteo — weather forecasts for dropzones. Your phone requests them directly, so Open-Meteo sees your IP address and the dropzone\'s location.',
