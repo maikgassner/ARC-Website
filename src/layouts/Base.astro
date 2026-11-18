@@ -5,7 +5,7 @@ import { SITE } from '../data/site';
 
 interface Props { title?: string; description?: string; noindex?: boolean }
 const { title, description = SITE.description, noindex = false } = Astro.props;
-const fullTitle = title ? `${title} · Arc` : `Arc — ${SITE.tagline}`;
+const fullTitle = title ? `${title} · Arc` : 'Arc Skydiving Logbook';
 const year = new Date().getFullYear();
 const canonical = new URL(Astro.url.pathname, Astro.site);
 ---
