@@ -21,6 +21,7 @@ export const PRIVACY: LegalSection[] = [
       'Emergency & medical: your emergency contact, and — only with your explicit consent — blood type, allergies, medication and conditions.',
       'Social: friends, posts, comments, likes, chat messages, events, reviews, and dropzone / tunnel suggestions and photos.',
       'Reports and feedback: reports you send about people or content, bug reports (with screenshots) and feedback.',
+      'Edit logbook (Premium): what you write to Arc, what it looked up for you (the filters and how many jumps they found, not the jumps themselves), its answer and whether you applied or undid a change. Used only to test and improve Edit logbook. Deleted after 90 days, and right away with your account.',
       'Technical: your device\'s push token and platform, and a daily counter of document scans.',
       'Usage data (you can switch it off): which screens you open and for how long, and actions such as logging a jump or opening the Premium page, with the app version. Linked to your account only so we can count, never shown with your name.',
     ],
