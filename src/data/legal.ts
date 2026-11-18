@@ -52,6 +52,7 @@ export const PRIVACY: LegalSection[] = [
     bullets: [
       'Supabase — database, sign-in, file storage and server functions. Servers in Zurich, Switzerland.',
       'Anthropic (Claude) — reads the logbook pages and documents you scan to fill in the fields. In Edit logbook (Premium) it gets what you write, a summary of your logbook and the details of the jumps it looks up to answer you (dropzone, aircraft, canopy, names, notes, who you jumped with), never signatures or licence numbers. Data is sent only when you scan or write, and Anthropic doesn\'t use it to train its models. USA.',
+      'Apple / Google speech recognition — when you tap the mic in Edit logbook, what you say is turned into text by your phone\'s speech service (Apple on iPhone, Google on Android). Arc only gets the text, no recording is kept.',
       'Expo — delivers push notifications: your push token and the notification\'s title and text (including message previews). USA.',
       'Apple and Google — push delivery to your phone, and sign-in if you choose it.',
       'Open-Meteo — weather forecasts for dropzones. Your phone requests them directly, so Open-Meteo sees your IP address and the dropzone\'s location.',
