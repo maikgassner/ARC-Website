@@ -274,6 +274,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
       { key: 'aircraft', label: 'Aircraft', type: 'chipsText', placeholder: 'e.g. 2× Twin Otter — Enter to add', suggest: ['1× Cessna 208', '1× Pilatus Porter', '1× Twin Otter', '2× Twin Otter', '1× Cessna 182', '1× Skyvan', '1× Casa 212'] },
       { key: 'hours_url', label: 'Opening hours link', type: 'text', placeholder: 'https://… their calendar or opening-hours page', hint: 'the DZ’s own hours / calendar page' },
       { key: 'hours', label: 'Opening hours', type: 'hours' },
+      { key: 'season_text', label: 'Main season', type: 'text', placeholder: 'e.g. 1 Apr – 31 Oct', hint: 'only open part of the year (same as the app); empty = all year' },
     ] },
     { title: 'Pricing', fields: [
       { key: 'guest_ticket_price', label: 'Guest jump ticket', type: 'number', decimal: true, placeholder: '32.50', hint: 'One jump for a visiting fun jumper' },
@@ -338,6 +339,34 @@ import AdminShell from '../../layouts/AdminShell.astro';
   const SHARED_KEYS = ['name', 'address', 'lat', 'lng', 'hours', 'hours_url', '_showHours', 'phone', 'website', 'description', 'facilities', 'avatar_path', 'currency', '_country', '_city'];
 
   const FT_PER_M = 1 / 0.3048;
+  // Seasons (0169), same as the app's utils/openingHours.ts: stored 'MM-DD/MM-DD',
+  // shown and typed as "1 Apr – 31 Oct" (also "April – October", "1.4. – 31.10.").
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const mdText = (v: string) => { const [m, d] = v.split('-').map(Number); return `${d} ${MONTHS[m - 1]}`; };
+  function seasonText(season?: string | null): string {
+    const m = season?.match(/^(\d{2}-\d{2})\/(\d{2}-\d{2})$/);
+    return m ? `${mdText(m[1])} – ${mdText(m[2])}` : '';
+  }
+  function parseSeason(text: string): string | null | '' {
+    const t = text.trim();
+    if (!t) return '';
+    const parts = t.split(/\s+(?:to|bis)\s+|\s*[–—-]\s*/i).filter(Boolean);
+    if (parts.length !== 2) return null;
+    const one = (p: string, end: boolean): string | null => {
+      const num = p.match(/^(\d{1,2})\.\s*(\d{1,2})\.?$/);
+      if (num) return `${num[2].padStart(2, '0')}-${num[1].padStart(2, '0')}`;
+      const named = p.match(/^(?:(\d{1,2})\.?\s*)?([a-zA-Zä]{3,})/);
+      if (!named) return null;
+      const mi = MONTHS.findIndex(x => named[2].toLowerCase().startsWith(x.toLowerCase().slice(0, 3)) || (x === 'Mar' && /^mär/i.test(named[2])) || (x === 'May' && /^mai/i.test(named[2])) || (x === 'Oct' && /^okt/i.test(named[2])) || (x === 'Dec' && /^dez/i.test(named[2])));
+      if (mi < 0) return null;
+      const last = new Date(2001, mi + 1, 0).getDate();
+      const d = named[1] ? Number(named[1]) : end ? last : 1;
+      if (d < 1 || d > last) return null;
+      return `${String(mi + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    };
+    const a = one(parts[0], false), b = one(parts[1], true);
+    return a && b ? `${a}/${b}` : null;
+  }
 
   // ---------- Opening hours (port of ARC/utils/openingHours.ts) ----------
   const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -523,6 +552,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
       values.altitude_m = Math.round(values.altitude_ft * 0.3048);
       values._alt_m0 = values.altitude_m; // unchanged metres → keep the exact feet value
     }
+    if (kind === 'dz') values.season_text = seasonText(values.season);
     editing = { kind, original: place?.name ?? null, values, gallery: [], pending: [] };
     dirty = false;
     if (place) await loadGallery();
@@ -1200,6 +1230,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     if (kind === 'dz' && !(v.country ?? '').trim()) errors.country = 'Country is required — pick an address or type it.';
     if (kind === 'tunnel' && !(v.location ?? '').trim()) errors.location = 'Location is required, e.g. “Winterthur, Switzerland”.';
     if (kind === 'dz' && v.altitude_m != null && (v.altitude_m < 300 || v.altitude_m > 8000)) errors.altitude_m = 'Exit altitude in metres, e.g. 4000.';
+    if (kind === 'dz' && parseSeason(v.season_text ?? '') === null) errors.season_text = 'Write it like “1 Apr – 31 Oct”, or leave it empty if it’s open all year.';
     if (kind === 'dz' && v.guest_ticket_price != null && v.guest_ticket_price < 0) errors.guest_ticket_price = 'Can’t be negative.';
     if (kind === 'dz' && v.guest_ticket_price != null && !(v.currency ?? '').trim()) errors.currency = 'Which currency is the ticket price in?';
     const ic = (v.icao ?? '').trim();
@@ -1221,7 +1252,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
     const { kind, original, values } = editing;
     const payload: Record<string, any> = {};
     for (const f of sectionsOf(kind).flatMap((s) => s.fields)) {
-      if (f.key === 'altitude_m' || (f.key === 'address' && kind === 'tunnel')) continue;
+      if (f.key === 'altitude_m' || f.key === 'season_text' || (f.key === 'address' && kind === 'tunnel')) continue;
       let v = values[f.key];
       if (typeof v === 'string') v = v.trim() || null;
       payload[f.key] = v ?? (f.type === 'chips' ? [] : null);
@@ -1231,6 +1262,7 @@ import AdminShell from '../../layouts/AdminShell.astro';
         : values.altitude_m === values._alt_m0 ? values.altitude_ft
         : Math.round(values.altitude_m * FT_PER_M);
       payload.webcams = values.webcams ?? [];
+      payload.season = parseSeason(values.season_text ?? '') || null;
     }
     if (payload.hours_url && !/^https?:\/\//i.test(payload.hours_url)) payload.hours_url = `https://${payload.hours_url}`;
     if (payload.icao) payload.icao = String(payload.icao).toUpperCase();
