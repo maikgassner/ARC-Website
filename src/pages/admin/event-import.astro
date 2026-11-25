@@ -154,12 +154,14 @@ import AdminShell from '../../layouts/AdminShell.astro';
   const ALL = '__all';
   const DISCS = ['Freefly', 'Belly', 'Wingsuit', 'Angle', 'Speed', 'CRW', 'Canopy', 'Tunnel'];
   // Optional event type (events.category, 0131) — same keys as the app.
-  const CATEGORIES: [string, string][] = [['', 'No type'], ['boogie', 'Boogie'], ['skills_camp', 'Skills camp'], ['competition', 'Competition'], ['other', 'Other']];
+  const CATEGORIES: [string, string][] = [['', 'No type'], ['boogie', 'Boogie'], ['skills_camp', 'Skills camp'], ['course', 'Course'], ['competition', 'Competition'], ['other', 'Other']];
   function guessCategory(it: Item): string {
     const t = `${it.type} ${it.title}`.toLowerCase();
     if (/competition|championship|meisterschaft|world cup|\bcup\b|nationals|\bwm\b|\bsm\b/.test(t)) return 'competition';
     if (/boogie|festival|fest\b/.test(t)) return 'boogie';
-    if (/camp|skill|clinic|masterclass|coach|course|training|ausbildung|week|invitational|experience/.test(t)) return 'skills_camp';
+    // A class (0185): masterclass, course, Kurs. Camps stay skills camps.
+    if (/masterclass|course|kurs\b|ausbildung|lehrgang/.test(t)) return 'course';
+    if (/camp|skill|clinic|coach|training|week|invitational|experience/.test(t)) return 'skills_camp';
     return '';
   }
 
