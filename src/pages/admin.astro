@@ -282,10 +282,16 @@ import AdminShell from '../layouts/AdminShell.astro';
       card.classList.add('leaving');
       setTimeout(() => { card.remove(); load(); }, 300);
     };
-    const dismiss = el('button', { class: 'neutral', type: 'button' }, svg('M5 12.5l4.5 4.5L19 7.5'), 'Dismiss') as HTMLButtonElement;
-    const remove = el('button', { class: 'reject', type: 'button' }, svg('M6 6l12 12M18 6L6 18'), text != null ? 'Remove content' : 'Mark actioned') as HTMLButtonElement;
-    dismiss.onclick = () => resolve('dismiss', '✓ Dismissed', [dismiss, remove]);
-    remove.onclick = () => resolve(text != null ? 'remove' : 'actioned', text != null ? '✕ Removed' : '✓ Marked actioned', [dismiss, remove]);
+    // Labels say what happens (2026-11-25): a post/comment is kept or deleted;
+    // a person report is only closed (Arc has no ban).
+    const thing = target.toLowerCase();
+    const dismiss = el('button', { class: 'neutral', type: 'button' }, svg('M5 12.5l4.5 4.5L19 7.5'), text != null ? `Keep ${thing}` : 'No action') as HTMLButtonElement;
+    const remove = el('button', { class: 'reject', type: 'button' }, svg('M6 6l12 12M18 6L6 18'), text != null ? `Delete ${thing}` : 'Handled') as HTMLButtonElement;
+    dismiss.onclick = () => resolve('dismiss', text != null ? `✓ ${target} kept` : '✓ Closed, no action', [dismiss, remove]);
+    remove.onclick = () => resolve(text != null ? 'remove' : 'actioned', text != null ? `✕ ${target} deleted` : '✓ Closed as handled', [dismiss, remove]);
+    const consequence = text != null
+      ? `Keep: stays visible${r.hidden ? ' (shown again)' : ''}, the report is closed. Delete: removed for everyone, can't be undone.`
+      : 'Arc has no ban yet. Both only close the report: No action = nothing wrong, Handled = you dealt with it (e.g. wrote to them).';
     add(card,
       el('span', { class: 'kind tunnel', textContent: `${target} · ${REASON[r.reason] ?? r.reason}` }),
       r.hidden && el('span', { class: 'hidden-badge', textContent: `Hidden automatically · ${r.report_count} reports` }),
@@ -294,6 +300,7 @@ import AdminShell from '../layouts/AdminShell.astro';
       text != null && el('p', { class: 'quote', textContent: text }),
       r.details && el('p', { class: 'note', textContent: `“${r.details}”` }),
       el('div', { class: 'actions' }, dismiss, remove),
+      el('p', { class: 'meta', textContent: consequence }),
     );
     return card;
   }
